@@ -1,20 +1,12 @@
 import "./process-fix.js";
-import { vol } from "memfs";
 import shell from "shelljs";
 import { createContext, run } from "./interp.js";
+import { seed as seedFs } from "./seed.js";
 
 shell.config.silent = true;
 
 function seed() {
-  vol.reset();
-  vol.fromJSON({
-    "/home/web/README.md": "# demo\nshell in browser\nfind the needle here\n",
-    "/home/web/src/a.js": "const x = 1;\nconsole.log(\"needle\", x);\n",
-    "/home/web/src/b.txt": "banana\napple\ncherry\napple\n",
-    "/home/web/src/nested/c.txt": "deep needle\n",
-    "/home/web/nums.txt": "10\n2\n33\n4\n",
-    "/tmp/.keep": ""
-  }, "/");
+  seedFs();
   shell.cd("/home/web");
 }
 

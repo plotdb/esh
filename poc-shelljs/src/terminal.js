@@ -39,7 +39,8 @@ worker.onmessage = (ev) => {
   if(m.type === "ready") {
     cwd = m.cwd;
     busy = false;
-    term.writeln("browser-shell — ShellJS + memfs + bash-parser, 全部跑在你的瀏覽器裡");
+    term.writeln("browser-shell — ShellJS + ZenFS + bash-parser, 全部跑在你的瀏覽器裡");
+    term.writeln("/home 儲存: " + (m.persist || "?"));
     term.writeln("試試: ls / cat README.md | grep needle / for f in src/*; do wc -l $f; done");
     term.writeln("");
     prompt();

@@ -22,6 +22,7 @@ const process = {
       else parts.push(seg);
     });
     cwd = "/" + parts.join("/");
+    if(globalThis.__syncFsCwd) globalThis.__syncFsCwd(cwd);
   },
   umask: function() { return 0o22; },
   hrtime: function(prev) {

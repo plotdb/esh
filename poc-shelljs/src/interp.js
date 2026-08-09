@@ -2,7 +2,7 @@
 // parser: bash-parser (posix mode) / evaluator: 本檔 / 指令本體: shelljs (M2 驗證)
 import parse from "bash-parser";
 import shell from "shelljs";
-import { fs } from "memfs";
+import fs from "fs";
 import fg from "fast-glob";
 
 // ---------- context ----------

@@ -22,7 +22,7 @@ export default defineConfig({
   },
   resolve: {
     alias: {
-      fs: r("./src/fs-shim.js"),
+      fs: r("./src/fs-zen-shim.js"),
       execa: r("./src/execa-shim.js"),
       "vite-plugin-node-polyfills/shims/process": r("./src/process-shim.js"),
       process: r("./src/process-shim.js"),

@@ -11,6 +11,8 @@
    - interp: control flow 層 3 — if/elif/for/while/until/case/function/
      break/continue/return/positional params(m25 測項 55/55)
    - terminal: xterm.js 終端(terminal.html),shell 直譯器移入 Web Worker
+   - fs: memfs → ZenFS 換底(fs-zen-shim),/home 掛 OPFS 持久化,
+     /tmp 留 InMemory;seed 抽共用 src/seed.js,fs 存取一律走 alias
  - bug fix:
    - workaround bash-parser 巢狀 compound 一行式 parse 失敗(分號正規化為換行)
    - workaround bash-parser 換行後幽靈 expansion(負數 loc 過濾)

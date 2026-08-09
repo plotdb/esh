@@ -102,8 +102,9 @@
   - [x] 後補 field splitting + xargs(39/39)
 - [x] M2.6 control flow 層 3 + Worker 架構 + xterm.js 終端(55/55,
   見 logs/20260809-m26-controlflow-worker-terminal.md)
-- [ ] OPFS 持久化(快照方案先行,write-through 於 worker 內用
-  createSyncAccessHandle 或評估 ZenFS OPFS backend)
+- [x] OPFS 持久化 — ZenFS 換底成功(branch dev/zenfs,M2 80/81 等分、
+  M2.5 55/55,/home 掛 WebAccess 實測重整存活,
+  見 logs/20260810-zenfs-opfs.md);快照方案不需要了
 - [ ] M3 uutils WASM PoC
 
 ## 參考

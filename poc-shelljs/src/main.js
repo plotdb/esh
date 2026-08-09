@@ -1,14 +1,9 @@
 import "./process-fix.js";
-import { vol, fs } from "memfs";
+import fs from "fs";
 import shell from "shelljs";
+import { seed } from "./seed.js";
 
-// 種一些測試檔案
-vol.fromJSON({
-  "/home/web/README.md": "# demo\nshell in browser\nfind the needle here\n",
-  "/home/web/src/a.js": "const x = 1;\nconsole.log(\"needle\", x);\n",
-  "/home/web/src/b.txt": "banana\napple\ncherry\n",
-  "/home/web/src/nested/c.txt": "deep needle\n"
-}, "/");
+seed();
 
 shell.config.silent = true;
 
@@ -68,5 +63,5 @@ results.forEach((r) => {
 summary.textContent = passed + " / " + results.length + " passed (exec 失敗是預期行為)";
 console.log("[poc] " + passed + "/" + results.length + " passed");
 window.shell = shell;
-window.vol = vol;
-console.log("[poc] window.shell / window.vol ready — 可直接在 console 玩");
+window.fs = fs;
+console.log("[poc] window.shell / window.fs ready — 可直接在 console 玩");
