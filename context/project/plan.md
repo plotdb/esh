@@ -105,6 +105,7 @@
 - [x] OPFS 持久化 — ZenFS 換底成功(branch dev/zenfs,M2 80/81 等分、
   M2.5 55/55,/home 掛 WebAccess 實測重整存活,
   見 logs/20260810-zenfs-opfs.md);快照方案不需要了
+- [x] 語法邊角全數完成(m25 72/72,見 tasks/syntax-edges.md 與 logs/20260810-syntax-edges.md)
 - [ ] M3 uutils WASM PoC
 
 ## 參考

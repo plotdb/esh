@@ -11,8 +11,79 @@ export function createContext() {
     vars: { HOME: "/home/web", PATH: "/bin" },
     funcs: {},
     positional: [],
+    scopes: [],
     lastCode: 0
   };
+}
+
+// ---------- $(( )) 算術 (babel-style AST from bash-parser) ----------
+function evalArith(n, ctx) {
+  switch(n.type) {
+    case "NumericLiteral": return n.value;
+    case "Identifier": {
+      const v = Number(ctx.vars[n.name]);
+      return isNaN(v) ? 0 : Math.trunc(v);
+    }
+    case "ParenthesizedExpression": return evalArith(n.expression, ctx);
+    case "UnaryExpression": {
+      const v = evalArith(n.argument, ctx);
+      if(n.operator === "-") return -v;
+      if(n.operator === "+") return v;
+      if(n.operator === "!") return v === 0 ? 1 : 0;
+      if(n.operator === "~") return ~v;
+      break;
+    }
+    case "BinaryExpression": {
+      const l = evalArith(n.left, ctx), r = evalArith(n.right, ctx);
+      switch(n.operator) {
+        case "+": return l + r;
+        case "-": return l - r;
+        case "*": return l * r;
+        case "/": if(r === 0) throw new Error("division by zero"); return Math.trunc(l / r);
+        case "%": if(r === 0) throw new Error("division by zero"); return l % r;
+        case "<": return l < r ? 1 : 0;
+        case ">": return l > r ? 1 : 0;
+        case "<=": return l <= r ? 1 : 0;
+        case ">=": return l >= r ? 1 : 0;
+        case "==": return l === r ? 1 : 0;
+        case "!=": return l !== r ? 1 : 0;
+        case "&": return l & r;
+        case "|": return l | r;
+        case "^": return l ^ r;
+        case "<<": return l << r;
+        case ">>": return l >> r;
+      }
+      break;
+    }
+    case "LogicalExpression": {
+      const l = evalArith(n.left, ctx);
+      if(n.operator === "&&") return l !== 0 && evalArith(n.right, ctx) !== 0 ? 1 : 0;
+      if(n.operator === "||") return l !== 0 || evalArith(n.right, ctx) !== 0 ? 1 : 0;
+      break;
+    }
+    case "ConditionalExpression":
+      return evalArith(n.test, ctx) !== 0 ? evalArith(n.consequent, ctx) : evalArith(n.alternate, ctx);
+    case "AssignmentExpression": {
+      const name = n.left.name;
+      let v = evalArith(n.right, ctx);
+      if(n.operator !== "=") {
+        const cur = Number(ctx.vars[name]) || 0;
+        const op = n.operator.slice(0, -1);
+        v = op === "+" ? cur + v : op === "-" ? cur - v : op === "*" ? cur * v
+          : op === "/" ? Math.trunc(cur / v) : op === "%" ? cur % v : v;
+      }
+      ctx.vars[name] = String(v);
+      return v;
+    }
+    case "UpdateExpression": {
+      const name = n.argument.name;
+      const cur = Number(ctx.vars[name]) || 0;
+      const nv = n.operator === "++" ? cur + 1 : cur - 1;
+      ctx.vars[name] = String(nv);
+      return n.prefix ? nv : cur;
+    }
+  }
+  throw new Error("arith: 不支援的節點 " + n.type);
 }
 
 // control flow 訊號 (以 exception 逐層上拋, 由 For/While/Function 捕捉)
@@ -50,9 +121,13 @@ function wordSegments(word, ctx) {
 
   exps.forEach((e) => {
     literal(src.slice(pos, e.loc.start));
-    let v = "";
+    let v = "", list = null;
     if(e.type === "ParameterExpansion") {
       if(e.parameter === "?") v = String(ctx.lastCode);
+      else if(e.parameter === "@" || e.parameter === "*") {
+        v = ctx.positional.join(" ");
+        if(inDouble && e.parameter === "@") list = ctx.positional.slice();
+      }
       else if(e.kind === "positional" || /^\d+$/.test(String(e.parameter)))
         v = ctx.positional[Number(e.parameter) - 1] !== undefined ? ctx.positional[Number(e.parameter) - 1] : "";
       else if(e.parameter === "#") v = String(ctx.positional.length);
@@ -60,8 +135,10 @@ function wordSegments(word, ctx) {
     } else if(e.type === "CommandExpansion") {
       const r = evalNode(e.commandAST, ctx, null);
       v = (r.stdout || "").replace(/\n+$/, "");
+    } else if(e.type === "ArithmeticExpansion") {
+      v = String(evalArith(e.arithmeticAST, ctx));
     }
-    segments.push({ text: v, quoted: inDouble, expansion: true });
+    segments.push({ text: v, quoted: inDouble, expansion: true, list });
     pos = e.loc.end + 1;
   });
   literal(src.slice(pos));
@@ -90,17 +167,31 @@ function expandWordToFields(word, ctx) {
     if(!quoted && /[*?[]/.test(text)) cur.hasGlob = true;
   };
 
+  // IFS 決定未加引號 expansion 的切欄字元 (IFS= 空字串則不切)
+  const ifs = ctx.vars.IFS !== undefined ? ctx.vars.IFS : " \t\n";
+  const splitter = ifs === "" ? null : new RegExp("[" + ifs.replace(/[\\\]^-]/g, "\\$&") + "]+");
+
   segs.forEach((seg) => {
     if(seg.expansion && !seg.quoted) {
-      const parts = seg.text.split(/[ \t\n]+/);
+      const parts = splitter ? seg.text.split(splitter) : [seg.text];
+      if(parts.length === 1 && parts[0] === "") return; // 空展開: 不成欄也不切欄
       parts.forEach((p, i) => {
         if(i > 0) flush();
         if(p === "") { if(i === 0) flush(); return; }
         addPiece(p, false);
       });
     } else if(seg.quoted) {
-      ensure();
-      cur.pattern += seg.text;
+      if(seg.list) {
+        // "$@": 每個參數獨立成欄, 前後可與相鄰片段黏合
+        seg.list.forEach((p, i) => {
+          if(i > 0) flush();
+          ensure();
+          cur.pattern += p;
+        });
+      } else {
+        ensure();
+        cur.pattern += seg.text;
+      }
     } else if(seg.text !== "") {
       addPiece(seg.text, false);
     }
@@ -235,6 +326,18 @@ const builtins = {
   "true": () => ({ stdout: "", stderr: "", code: 0 }),
   "false": () => ({ stdout: "", stderr: "", code: 1 }),
   ":": () => ({ stdout: "", stderr: "", code: 0 }),
+  "local": (args, stdin, ctx) => {
+    const frame = ctx.scopes[ctx.scopes.length - 1];
+    if(!frame) return { stdout: "", stderr: "local: 只能在 function 內使用", code: 1 };
+    args.forEach((a) => {
+      const i = a.indexOf("=");
+      const k = i >= 0 ? a.slice(0, i) : a;
+      if(!(k in frame))
+        frame[k] = Object.prototype.hasOwnProperty.call(ctx.vars, k) ? [true, ctx.vars[k]] : [false];
+      ctx.vars[k] = i >= 0 ? a.slice(i + 1) : "";
+    });
+    return { stdout: "", stderr: "", code: 0 };
+  },
   "export": (args, stdin, ctx) => {
     args.forEach((a) => {
       const i = a.indexOf("=");
@@ -327,6 +430,12 @@ function testCmd(args) {
     else ok = !!shell.test(args[0], args[1]);
   } else if(args.length === 3 && args[1] === "=") ok = args[0] === args[2];
   else if(args.length === 3 && args[1] === "!=") ok = args[0] !== args[2];
+  else if(args.length === 3 && /^-(lt|le|gt|ge|eq|ne)$/.test(args[1])) {
+    const l = Number(args[0]), r = Number(args[2]);
+    const op = args[1];
+    ok = op === "-lt" ? l < r : op === "-le" ? l <= r : op === "-gt" ? l > r
+      : op === "-ge" ? l >= r : op === "-eq" ? l === r : l !== r;
+  }
   else if(args.length === 1) ok = args[0].length > 0;
   return { stdout: "", stderr: "", code: ok ? 0 : 1 };
 }
@@ -368,8 +477,14 @@ function evalCommand(node, ctx, stdin) {
   let input = stdin;
   redirects.forEach((r) => {
     if(r.op.text === "<") {
-      try { input = String(fs.readFileSync(expandString(r.file, ctx))); }
+      const target = expandString(r.file, ctx);
+      try { input = String(fs.readFileSync(target)); }
       catch(e) { input = ""; }
+      if(heredocExpand.has(target))
+        input = input.replace(/\$\{(\w+)\}|\$(\w+)/g, (mm, a, b) => {
+          const k = a || b;
+          return ctx.vars[k] !== undefined ? ctx.vars[k] : "";
+        });
     }
   });
 
@@ -395,12 +510,18 @@ function evalCommand(node, ctx, stdin) {
 function callFunction(body, argv, ctx, stdin) {
   const saved = ctx.positional;
   ctx.positional = argv;
+  ctx.scopes.push({});
   try {
     return evalNode(body, ctx, stdin);
   } catch(e) {
     if(e instanceof ReturnSig) return { stdout: "", stderr: "", code: e.code };
     throw e;
   } finally {
+    const frame = ctx.scopes.pop();
+    Object.keys(frame).forEach((k) => {
+      if(frame[k][0]) ctx.vars[k] = frame[k][1];
+      else delete ctx.vars[k];
+    });
     ctx.positional = saved;
   }
 }
@@ -577,9 +698,42 @@ function normalizeSemicolons(src) {
   return out;
 }
 
+// heredoc: bash-parser 會把 body 整個丟掉, 故 parse 前自行抽出 —
+// body 寫進 /tmp/.heredoc-N, `<<DELIM` 改寫為 `< 檔案`。
+// 未加引號的 delimiter 依 bash 語意展開 $VAR/${VAR}; <<- 剝行首 tab。
+let heredocN = 0;
+const heredocExpand = new Set();
+function extractHeredocs(src, ctx) {
+  if(src.indexOf("<<") < 0) return src;
+  const lines = src.split("\n");
+  const out = [];
+  for(let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    const m = line.match(/<<(-?)\s*(['"]?)([A-Za-z_]\w*)\2/);
+    if(!m) { out.push(line); continue; }
+    const strip = m[1] === "-", quotedDelim = m[2] !== "", delim = m[3];
+    const body = [];
+    let j = i + 1;
+    for(; j < lines.length; j++) {
+      const l = strip ? lines[j].replace(/^\t+/, "") : lines[j];
+      if(l === delim) break;
+      body.push(l);
+    }
+    const content = body.length ? body.join("\n") + "\n" : "";
+    try { fs.mkdirSync("/tmp", { recursive: true }); } catch(e) { /* 已存在 */ }
+    const path = "/tmp/.heredoc-" + (++heredocN);
+    fs.writeFileSync(path, content);
+    // 變數展開延後到讀取時 (同一行 NAME=w; cat <<EOF 的賦值才來得及生效)
+    if(!quotedDelim) heredocExpand.add(path);
+    out.push(line.replace(m[0], "< " + path));
+    i = j;
+  }
+  return out.join("\n");
+}
+
 export function run(cmdline, ctx) {
   let ast;
-  try { ast = parse(normalizeSemicolons(cmdline), { mode: "posix" }); }
+  try { ast = parse(normalizeSemicolons(extractHeredocs(cmdline, ctx)), { mode: "posix" }); }
   catch(e) { return { stdout: "", stderr: "parse error: " + e.message, code: 2 }; }
   try { return evalNode(ast, ctx, null); }
   catch(e) { return { stdout: "", stderr: "interp error: " + e.message, code: 1 }; }

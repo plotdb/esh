@@ -69,7 +69,30 @@ const cases = [
   ["greet() { echo hi $1; }; greet world", "hi world"],
   ["f() { return 3; }; f; echo $?", "3"],
   ["f() { echo $#; }; f a b", "2"],
-  ["f() { for x in $1 $2; do echo -$x; done; }; f p q", "-p\n-q"]
+  ["f() { for x in $1 $2; do echo -$x; done; }; f p q", "-p\n-q"],
+  // 算術展開
+  ["echo $((1+2*3))", "7"],
+  ["echo $((10/3)) $((10%3))", "3 1"],
+  ["echo $((-2+1))", "-1"],
+  ["i=1; i=$((i*5)); echo $i", "5"],
+  ["i=0; while [ $i -lt 3 ]; do echo $i; i=$((i+1)); done", "0\n1\n2"],
+  ["[ 2 -lt 10 ] && echo yes", "yes"],
+  ["[ 5 -ge 5 ] && echo ge", "ge"],
+  // $@ / $* / positional
+  ["f() { echo $#: $@; }; f a b c", "3: a b c"],
+  ["f() { for x in \"$@\"; do echo [$x]; done; }; f \"a b\" c", "[a b]\n[c]"],
+  // local
+  ["x=1; f() { local x=2; echo $x; }; f; echo $x", "2\n1"],
+  ["f() { local y=9; }; f; echo -$y-", "--"],
+  // IFS
+  ["IFS=,; v=a,b,c; for x in $v; do echo -$x; done", "-a\n-b\n-c"],
+  // heredoc
+  ["NAME=w; cat <<EOF\nhi $NAME\nEOF", "hi w"],
+  ["cat <<'EOF'\nliteral $x\nEOF", "literal $x"],
+  ["cat <<EOF | sort\nb\na\nEOF", "a\nb"],
+  // escape (parser 層處理)
+  ["echo \\$HOME", "$HOME"],
+  ["echo a\\ b", "a b"]
 ];
 
 const casesDiv = document.getElementById("cases");

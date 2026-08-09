@@ -13,6 +13,8 @@
    - terminal: xterm.js 終端(terminal.html),shell 直譯器移入 Web Worker
    - fs: memfs → ZenFS 換底(fs-zen-shim),/home 掛 OPFS 持久化,
      /tmp 留 InMemory;seed 抽共用 src/seed.js,fs 存取一律走 alias
+   - interp: 語法邊角 — $(( )) 算術、test 數值比較、$@/"$@"、local、
+     自訂 IFS、heredoc(parse 前抽出 + 延後展開)、escape(m25 72/72)
  - bug fix:
    - workaround bash-parser 巢狀 compound 一行式 parse 失敗(分號正規化為換行)
    - workaround bash-parser 換行後幽靈 expansion(負數 loc 過濾)
