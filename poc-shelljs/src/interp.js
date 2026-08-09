@@ -9,16 +9,28 @@ import fg from "fast-glob";
 export function createContext() {
   return {
     vars: { HOME: "/home/web", PATH: "/bin" },
+    funcs: {},
+    positional: [],
     lastCode: 0
   };
 }
+
+// control flow 訊號 (以 exception 逐層上拋, 由 For/While/Function 捕捉)
+function BreakSig(n) { this.n = n || 1; }
+function ContinueSig(n) { this.n = n || 1; }
+function ReturnSig(code) { this.code = code || 0; }
 
 // ---------- word expansion ----------
 // 把 word 拆成 segments: {text, quoted, expansion}
 // 追蹤雙引號區域 (單引號 parser 已剝除), expansion 於此解析成值
 function wordSegments(word, ctx) {
   const src = word.text;
-  const exps = (word.expansion || []).slice().sort((a, b) => a.loc.start - b.loc.start);
+  // bash-parser bug: 換行後的指令 Word 會殘留前一行的幽靈 expansion,
+  // loc 為負數或指錯位置 — 只接受 loc 合法且該處確為 $ 或 ` 的 expansion
+  const exps = (word.expansion || []).filter((e) =>
+    e.loc && e.loc.start >= 0 && e.loc.end >= e.loc.start && e.loc.end < src.length &&
+    (src.charAt(e.loc.start) === "$" || src.charAt(e.loc.start) === "`")
+  ).sort((a, b) => a.loc.start - b.loc.start);
   const segments = [];
   let pos = 0, inDouble = false;
 
@@ -41,6 +53,9 @@ function wordSegments(word, ctx) {
     let v = "";
     if(e.type === "ParameterExpansion") {
       if(e.parameter === "?") v = String(ctx.lastCode);
+      else if(e.kind === "positional" || /^\d+$/.test(String(e.parameter)))
+        v = ctx.positional[Number(e.parameter) - 1] !== undefined ? ctx.positional[Number(e.parameter) - 1] : "";
+      else if(e.parameter === "#") v = String(ctx.positional.length);
       else v = ctx.vars[e.parameter] !== undefined ? String(ctx.vars[e.parameter]) : "";
     } else if(e.type === "CommandExpansion") {
       const r = evalNode(e.commandAST, ctx, null);
@@ -214,6 +229,9 @@ const builtins = {
     if(args[args.length - 1] !== "]") return { stdout: "", stderr: "[: missing ]", code: 2 };
     return testCmd(args.slice(0, -1));
   },
+  "break": (args) => { throw new BreakSig(Number(args[0]) || 1); },
+  "continue": (args) => { throw new ContinueSig(Number(args[0]) || 1); },
+  "return": (args) => { throw new ReturnSig(Number(args[0]) || 0); },
   "true": () => ({ stdout: "", stderr: "", code: 0 }),
   "false": () => ({ stdout: "", stderr: "", code: 1 }),
   ":": () => ({ stdout: "", stderr: "", code: 0 }),
@@ -235,10 +253,14 @@ const builtins = {
 };
 
 function callBuiltin(name, argv, stdin, ctx) {
+  if(ctx.funcs[name]) return callFunction(ctx.funcs[name], argv, ctx, stdin);
   const fn = builtins[name];
   if(!fn) return { stdout: "", stderr: name + ": command not found", code: 127 };
   try { return fn(argv, stdin, ctx); }
-  catch(e) { return { stdout: "", stderr: name + ": " + e.message, code: 1 }; }
+  catch(e) {
+    if(e instanceof BreakSig || e instanceof ContinueSig || e instanceof ReturnSig) throw e;
+    return { stdout: "", stderr: name + ": " + e.message, code: 1 };
+  }
 }
 
 builtins.xargs = (args, stdin, ctx) => {
@@ -370,6 +392,34 @@ function evalCommand(node, ctx, stdin) {
   return res;
 }
 
+function callFunction(body, argv, ctx, stdin) {
+  const saved = ctx.positional;
+  ctx.positional = argv;
+  try {
+    return evalNode(body, ctx, stdin);
+  } catch(e) {
+    if(e instanceof ReturnSig) return { stdout: "", stderr: "", code: e.code };
+    throw e;
+  } finally {
+    ctx.positional = saved;
+  }
+}
+
+function globToRegExp(pat) {
+  let re = "";
+  for(let i = 0; i < pat.length; i++) {
+    const c = pat.charAt(i);
+    if(c === "*") re += ".*";
+    else if(c === "?") re += ".";
+    else if("\\^$.|+()[]{}".indexOf(c) >= 0 && c !== "[" && c !== "]") re += "\\" + c;
+    else if(c === "[" || c === "]") re += c;
+    else re += c;
+  }
+  return new RegExp("^" + re + "$");
+}
+
+const MAX_LOOP = 100000;
+
 function concatRes(a, b) {
   let out = a.stdout;
   if(out && out.charAt(out.length - 1) !== "\n" && b.stdout) out += "\n";
@@ -409,6 +459,73 @@ function evalNode(node, ctx, stdin) {
     }
     case "Command":
       return evalCommand(node, ctx, stdin);
+    case "If": {
+      const cond = evalNode(node.clause, ctx, null);
+      ctx.lastCode = cond.code;
+      let branch = { stdout: "", stderr: "", code: cond.code === 0 ? 0 : ctx.lastCode };
+      if(cond.code === 0) branch = evalNode(node.then, ctx, null);
+      else if(node.else) branch = evalNode(node.else, ctx, null);
+      else branch = { stdout: "", stderr: "", code: 0 };
+      ctx.lastCode = branch.code;
+      return concatRes({ stdout: cond.stdout, stderr: cond.stderr, code: 0 }, branch);
+    }
+    case "For": {
+      let words = [];
+      (node.wordlist || []).forEach((w) => { words = words.concat(expandWordToFields(w, ctx)); });
+      let acc = { stdout: "", stderr: "", code: 0 };
+      for(let i = 0; i < words.length; i++) {
+        ctx.vars[node.name.text] = words[i];
+        try {
+          const r = evalNode(node.do, ctx, null);
+          ctx.lastCode = r.code;
+          acc = concatRes(acc, r);
+        } catch(e) {
+          if(e instanceof BreakSig) { if(e.n > 1) { e.n--; throw e; } break; }
+          if(e instanceof ContinueSig) { if(e.n > 1) { e.n--; throw e; } continue; }
+          throw e;
+        }
+      }
+      return acc;
+    }
+    case "While":
+    case "Until": {
+      let acc = { stdout: "", stderr: "", code: 0 }, iter = 0;
+      for(;;) {
+        if(++iter > MAX_LOOP)
+          return concatRes(acc, { stdout: "", stderr: "loop aborted: 超過 " + MAX_LOOP + " 次迭代", code: 1 });
+        const cond = evalNode(node.clause, ctx, null);
+        ctx.lastCode = cond.code;
+        const go = node.type === "While" ? cond.code === 0 : cond.code !== 0;
+        if(!go) break;
+        try {
+          const r = evalNode(node.do, ctx, null);
+          ctx.lastCode = r.code;
+          acc = concatRes(acc, r);
+        } catch(e) {
+          if(e instanceof BreakSig) { if(e.n > 1) { e.n--; throw e; } break; }
+          if(e instanceof ContinueSig) { if(e.n > 1) { e.n--; throw e; } continue; }
+          throw e;
+        }
+      }
+      return acc;
+    }
+    case "Case": {
+      const subject = expandString(node.clause, ctx);
+      for(let i = 0; i < (node.cases || []).length; i++) {
+        const item = node.cases[i];
+        const hit = (item.pattern || []).some((p) => globToRegExp(expandString(p, ctx)).test(subject));
+        if(hit) {
+          if(!item.body) return { stdout: "", stderr: "", code: 0 };
+          const r = evalNode(item.body, ctx, null);
+          ctx.lastCode = r.code;
+          return r;
+        }
+      }
+      return { stdout: "", stderr: "", code: 0 };
+    }
+    case "Function":
+      ctx.funcs[node.name.text] = node.body;
+      return { stdout: "", stderr: "", code: 0 };
     case "Subshell": {
       const sub = { vars: Object.assign({}, ctx.vars), lastCode: ctx.lastCode };
       return evalNode(node.list, sub, stdin);
@@ -418,9 +535,51 @@ function evalNode(node, ctx, stdin) {
   }
 }
 
+// bash-parser 的巢狀 compound (for 裡的 if 等) 在同一行以 ; 或空格接續會
+// parse 失敗, 換行則正常。shell 文法中換行與 ; 等價, 故 parse 前正規化:
+// 1. 引號外的單一 ; (保留 case 的 ;;) → 換行
+// 2. do/then/else/{ 後面直接接 if/for/while/until/case 時, 中間補換行
+function normalizeSemicolons(src) {
+  const LEAD = { "do": 1, "then": 1, "else": 1, "{": 1 };
+  const START = { "if": 1, "for": 1, "while": 1, "until": 1, "case": 1 };
+  const toks = [], seps = [];
+  let cur = "", sep = "", inS = false, inD = false, esc = false;
+  const flush = () => { if(cur !== "") { toks.push(cur); seps.push(sep); cur = ""; sep = ""; } };
+  for(let i = 0; i < src.length; i++) {
+    const c = src.charAt(i);
+    if(esc) { cur += c; esc = false; continue; }
+    if(c === "\\") { cur += c; esc = true; continue; }
+    if(c === "'" && !inD) inS = !inS;
+    else if(c === "\"" && !inS) inD = !inD;
+    if(!inS && !inD) {
+      if(c === ";") {
+        if(src.charAt(i + 1) === ";") { cur += ";;"; i++; continue; }
+        flush();
+        sep = "\n";
+        continue;
+      }
+      if(c === " " || c === "\t" || c === "\n") {
+        flush();
+        if(c === "\n" || sep === "") sep = (sep === "\n" || c === "\n") ? "\n" : c;
+        continue;
+      }
+    }
+    cur += c;
+  }
+  flush();
+  let out = "";
+  toks.forEach((t, i) => {
+    if(i === 0) { out = t; return; }
+    let s = seps[i] || " ";
+    if(LEAD[toks[i - 1]] && START[t]) s = "\n";
+    out += s + t;
+  });
+  return out;
+}
+
 export function run(cmdline, ctx) {
   let ast;
-  try { ast = parse(cmdline, { mode: "posix" }); }
+  try { ast = parse(normalizeSemicolons(cmdline), { mode: "posix" }); }
   catch(e) { return { stdout: "", stderr: "parse error: " + e.message, code: 2 }; }
   try { return evalNode(ast, ctx, null); }
   catch(e) { return { stdout: "", stderr: "interp error: " + e.message, code: 1 }; }

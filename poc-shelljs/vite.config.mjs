@@ -11,6 +11,15 @@ export default defineConfig({
       globals: { Buffer: true, global: true, process: true }
     })
   ],
+  worker: {
+    format: "es",
+    plugins: () => [
+      nodePolyfills({
+        include: ["path", "process", "buffer", "util", "stream", "events", "assert", "url"],
+        globals: { Buffer: true, global: true, process: true }
+      })
+    ]
+  },
   resolve: {
     alias: {
       fs: r("./src/fs-shim.js"),

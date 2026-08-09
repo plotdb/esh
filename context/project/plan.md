@@ -99,6 +99,11 @@
 - [x] M1 ShellJS PoC(24/25 通過,見 logs/20260809-m1-shelljs-poc.md)
 - [x] M2 指令存活表(80/81 通過,見 logs/20260809-m2-survival-table.md)
 - [x] M2.5 shell 語法直譯層(30/30 通過,見 logs/20260809-m25-shell-interp.md)
+  - [x] 後補 field splitting + xargs(39/39)
+- [x] M2.6 control flow 層 3 + Worker 架構 + xterm.js 終端(55/55,
+  見 logs/20260809-m26-controlflow-worker-terminal.md)
+- [ ] OPFS 持久化(快照方案先行,write-through 於 worker 內用
+  createSyncAccessHandle 或評估 ZenFS OPFS backend)
 - [ ] M3 uutils WASM PoC
 
 ## 參考

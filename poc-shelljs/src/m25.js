@@ -60,12 +60,34 @@ const cases = [
   ["ls src | xargs echo", "a.js b.txt nested"],
   ["echo README.md nums.txt | xargs cat | wc -l", "7"],
   ["ls src | xargs -n 1 echo x", "x a.js\nx b.txt\nx nested"],
-  ["ls src/*.txt | xargs -I {} cp {} /tmp && ls /tmp/b.txt", "/tmp/b.txt"]
+  ["ls src/*.txt | xargs -I {} cp {} /tmp && ls /tmp/b.txt", "/tmp/b.txt"],
+  // control flow (層 3)
+  ["if true; then echo a; else echo b; fi", "a"],
+  ["if false; then echo a; else echo b; fi", "b"],
+  ["if [ -f README.md ]; then echo yes; fi", "yes"],
+  ["if [ -f nope ]; then echo 1; elif [ -d src ]; then echo 2; else echo 3; fi", "2"],
+  ["for f in a b c; do echo x$f; done", "xa\nxb\nxc"],
+  ["for f in src/*; do echo $f; done", "src/a.js\nsrc/b.txt\nsrc/nested"],
+  ["for f in src/*.txt; do wc -l $f; done", "4"],
+  ["x=\"\"; while [ \"$x\" != aaa ]; do x=a$x; echo $x; done", "a\naa\naaa"],
+  ["for f in a b c; do if [ $f = b ]; then break; fi; echo $f; done", "a"],
+  ["for f in a b c; do if [ $f = b ]; then continue; fi; echo $f; done", "a\nc"],
+  ["x=hello; case $x in h*) echo H;; *) echo other;; esac", "H"],
+  ["x=zz; case $x in h*) echo H;; *) echo other;; esac", "other"],
+  ["greet() { echo hi $1; }; greet world", "hi world"],
+  ["f() { return 3; }; f; echo $?", "3"],
+  ["f() { echo $#; }; f a b", "2"],
+  ["f() { for x in $1 $2; do echo -$x; done; }; f p q", "-p\n-q"]
 ];
 
 const casesDiv = document.getElementById("cases");
 let passed = 0;
-cases.forEach(([cmdline, expect]) => {
+// bisect 用: ?from=N&to=M 只跑部分測項
+const qs = new URLSearchParams(location.search);
+const from = Number(qs.get("from") || 0), to = Number(qs.get("to") || cases.length);
+const active = cases.slice(from, to);
+active.forEach(([cmdline, expect]) => {
+  console.log("[m25-case] " + cmdline);
   seed();
   const ctx = createContext();
   const r = run(cmdline, ctx);
@@ -79,8 +101,8 @@ cases.forEach(([cmdline, expect]) => {
   div.querySelector(".out").textContent = ok ? got : "got:  " + got + (r.stderr ? "\nstderr: " + r.stderr : "") + "\nwant: " + (typeof expect === "function" ? "(predicate)" : expect);
   casesDiv.appendChild(div);
 });
-document.getElementById("summary").textContent = passed + " / " + cases.length + " passed";
-console.log("[m25] " + passed + "/" + cases.length);
+document.getElementById("summary").textContent = passed + " / " + active.length + " passed";
+console.log("[m25] " + passed + "/" + active.length);
 
 // ---------- REPL ----------
 seed();
