@@ -56,12 +56,12 @@ const sh = esh({ fs, shell, parse, fg });    // 依賴自備, bundler-agnostic
 ## 開發
 
 - `npm run build` — esbuild 打包 dist/(esm + iife),並複製到 web/static/assets/esh/
-- `npm run dev` — vite dev server,迴歸測試頁在 web/dev/:
-  /web/dev/m2.html(指令存活表 81 項)、/web/dev/m25.html(語法測項 72 項)、
-  /web/dev/terminal.html(xterm + worker + OPFS)
+- `npm run dev` — vite dev server,迴歸測試頁在 web/vitedev/:
+  /web/vitedev/m2.html(指令存活表 81 項)、/web/vitedev/m25.html(語法測項 72 項)、
+  /web/vitedev/terminal.html(xterm + worker + OPFS)
 - `npm run dev:web` — fedev template server(web/:pug demo 與靜態頁,只消費 dist 成品)
 
-vite 僅供 web/dev/ 測試頁(需 source-level alias);成品與 web/ demo 皆不依賴 vite。
+vite 僅供 web/vitedev/ 測試頁(需 source-level alias);成品與 web/ demo 皆不依賴 vite。
 poc-shelljs/ 為早期 PoC 歷史參照,不再維護。
 
 
