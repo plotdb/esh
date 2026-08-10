@@ -7,15 +7,19 @@ import fg from "fast-glob";
 import { configure, InMemory } from "@zenfs/core";
 import { WebAccess, IndexedDB } from "@zenfs/dom";
 import { esh as eshBase } from "./base.js";
+export { registerCommand } from "./core.js"; // 全域註冊 (跨 shell, 慎用)
 
 shell.config.silent = true;
 
 // 一般用法: createShell() → 直接可用 (InMemory)
 // createShell({ mounts }) → 自訂掛載, 如 OPFS 持久化:
 //   { "/home": { backend: "opfs" } }
+// createShell({ commands }) → 掛一批自訂指令 (per-shell);
+//   簽名 (argv, stdin, ctx) → {stdout, stderr, code} | string
+//   之後也可用 sh.registerCommand(name, fn) / ({name: fn, ...}) 增掛
 export function createShell(opts) {
   const p = (opts && opts.mounts) ? mountAll(opts.mounts) : Promise.resolve();
-  return p.then(() => eshBase({ fs, shell, parse, fg }));
+  return p.then(() => eshBase({ fs, shell, parse, fg, commands: opts && opts.commands }));
 }
 
 function mountAll(mounts) {

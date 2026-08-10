@@ -2,7 +2,7 @@
 // (概念同 @plotdb/rescope 的 load-to-context)
 // 不變量: ctx.fs 與 ctx.shell 內部綁定的 fs 必須是同一個實作 —
 // shelljs 的 fs 在其打包當下已定案, base 無從代換, 僅能驗證。
-import { initDeps, createContext, run } from "./core.js";
+import { initDeps, createContext, run, commandMap } from "./core.js";
 
 export function esh(ctx) {
   ["fs", "shell", "parse", "fg"].forEach((k) => {
@@ -23,10 +23,17 @@ export function esh(ctx) {
   }
 
   const state = createContext();
-  return {
+  // 自訂指令: per-shell registry (ctx.commands 可於建構時給一批)
+  if(ctx.commands) Object.assign(state.commands, commandMap(ctx.commands));
+  const api = {
     run: (cmdline) => run(cmdline, state),
+    registerCommand: (name, fn) => {
+      Object.assign(state.commands, commandMap(name, fn));
+      return api; // 可鏈式呼叫
+    },
     context: state,
     createContext,
     fs: ctx.fs
   };
+  return api;
 }

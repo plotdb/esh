@@ -46,6 +46,21 @@ function/return/local、break/continue(含層數)、export/unset、~ 展開
 - 自製:echo wc test/[ xargs(-n/-L/-I) true false export unset local env
 - 不支援:exec(無 child_process)、which(無 PATH 執行檔)
 
+## 自訂指令(0.0.2)
+
+- 簽名同 builtin:`(argv, stdin, ctx) → {stdout, stderr, code}`;
+  寬鬆回傳:字串視為 stdout(code 0)、undefined 視為成功空輸出。
+  自動參與 pipe/redirect/$( )(皆為字串傳遞)。
+- per-shell(主要):`createShell({commands: {...}})` 或
+  `sh.registerCommand(name, fn)` / `sh.registerCommand({name: fn, ...})`,
+  掛在 ctx.commands, shell 間互不可見。
+- 全域(預留):`registerCommand(...)` 從 entry re-export
+  (core 的 globalCommands, 同 realm 所有 shell 共用, 慎用)。
+- 查找順序:shell function → per-shell → 全域 → builtins。
+- worker/終端:function 過不了 postMessage — esh-term 要自訂指令得自備
+  worker(createTerminal 的 opts.worker 縫已存在);
+  worker 底座抽用(esh-worker-base)為未來項目。
+
 ## fs
 
 - ZenFS(@zenfs/core),shim 修補四項行為差異(相對路徑 cwd hook、

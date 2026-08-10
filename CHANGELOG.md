@@ -1,5 +1,21 @@
 # Change Logs
 
+## v0.0.2
+
+ - bugfixes:
+   - 自訂指令回傳 Promise 時明確報錯(evaluator 為同步;先前會靜默回報成功)
+   - normalizeCmdResult 強制 stdout/stderr 轉字串、code 轉數字
+     (非字串 stdout 曾使下游 pipe 炸 s.replace is not a function)
+   - Subshell 修復: sub context 先前缺 funcs/commands/positional/scopes,
+     `(echo hi)` 直接 TypeError;現 vars 複本隔離、其餘共用 reference
+ - features:
+   - 自訂指令 API: sh.registerCommand(name, fn) / ({name: fn, ...}),
+     createShell({commands}) 建構時掛一批;簽名同 builtin
+     (argv, stdin, ctx) → {stdout, stderr, code}, 寬鬆回傳(字串視為 stdout)
+   - per-shell registry(ctx.commands)為主;另有全域 registerCommand
+     (跨 shell 共用, 從 entry re-export, 慎用)
+   - 查找順序: shell function → per-shell → 全域 → builtins
+
 ## v0.0.1
 
  - tweaks:
