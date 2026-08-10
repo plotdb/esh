@@ -130,10 +130,21 @@
 終局:自製 fs-builtins + WASM text tools + 直譯層,shelljs 與
 alias 機關、execa stub 一併移除;base 的 ctx 縮為 { fs, parse }。
 
-### 套件切分
+### 套件切分與命名(20260810 定案:@plotdb/esh)
 
-- `browser-shell`(core):base + bundle 成品 + m2/m25 測試(迴歸網)
-- `browser-shell-terminal`(選配):xterm UI + worker entry 成品
+- 定位:**shell runtime written in JS**(embeddable shell),
+  瀏覽器只是旗艦宿主 — Node(真 fs 或 memfs 沙箱)/worker 皆可跑,
+  Node 宿主零墊片(shelljs 的 require('fs') 天然解析)。
+- 名稱 `esh` = embeddable shell。既有同名專案(jirutka 模板/google UART/
+  JVM jeeshell)分屬不同領域且無強勢擁有者,JS/npm 領域空缺,不構成障礙;
+  文件一律寫全名 @plotdb/esh 消歧。否決:jsh(StackBlitz 強勢同名)、
+  webshell(資安攻擊術語)、shcore(Windows DLL 搜尋災難)。
+- 套件:
+  - `@plotdb/esh` — 主套件。exports:browser 條件 → dist/esh.js
+    (self-contained bundle);default → src/node-entry.js(Node 零墊片);
+    `/base`(esh(ctx) factory)、`/core`(零依賴直譯器)子路徑供進階使用
+  - `@plotdb/esh-term`(未來,選配):xterm UI + worker entry 成品
+- API 名同套件名:`esh(ctx)`。
 
 ## 目前狀態
 

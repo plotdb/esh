@@ -1,4 +1,4 @@
-// browser-shell bundle 層 — 依賴於打包時(esbuild alias)解掉,
+// @plotdb/esh bundle 層 — 依賴於打包時(esbuild alias)解掉,
 // 產出 self-contained ESM: 使用者零設定 import
 import fs from "fs";
 import shell from "shelljs";
@@ -6,7 +6,7 @@ import parse from "bash-parser";
 import fg from "fast-glob";
 import { configure, InMemory } from "@zenfs/core";
 import { WebAccess, IndexedDB } from "@zenfs/dom";
-import { bsh as bshBase } from "./base.js";
+import { esh as eshBase } from "./base.js";
 
 shell.config.silent = true;
 
@@ -15,7 +15,7 @@ shell.config.silent = true;
 //   { "/home": { backend: "opfs" } }
 export function createShell(opts) {
   const p = (opts && opts.mounts) ? mountAll(opts.mounts) : Promise.resolve();
-  return p.then(() => bshBase({ fs, shell, parse, fg }));
+  return p.then(() => eshBase({ fs, shell, parse, fg }));
 }
 
 function mountAll(mounts) {
@@ -33,11 +33,11 @@ function mountAll(mounts) {
   }), Promise.resolve()).then(() => configure({ mounts: spec }));
 }
 
-export const bsh = bshBase;
+export const esh = eshBase;
 export { fs };
 
-bshBase.pkg = {
-  name: "browser-shell",
+eshBase.pkg = {
+  name: "@plotdb/esh",
   dependencies: [
     { name: "shelljs", version: "0.10.0" },
     { name: "bash-parser", version: "0.5.0" },

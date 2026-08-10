@@ -1,4 +1,4 @@
-# browser-shell
+# @plotdb/esh (browser-shell 專案)
 
 純前端(無 Node runtime)的 shell / coreutils 能力實驗:
 ShellJS + virtual fs 與 WASM coreutils 兩條路線。

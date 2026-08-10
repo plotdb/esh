@@ -1,20 +1,44 @@
 {
-  "name": "poc-shelljs",
-  "version": "1.0.0",
-  "description": "",
-  "main": "index.js",
-  "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+  "name": "@plotdb/esh",
+  "version": "0.0.1",
+  "description": "esh — embeddable shell runtime for JavaScript. Shell syntax + virtual fs, runs in browser (OPFS persistence), Node, and workers.",
+  "type": "module",
+  "exports": {
+    ".": {
+      "browser": "./dist/esh.js",
+      "default": "./src/node-entry.js"
+    },
+    "./base": "./src/base.js",
+    "./core": "./src/core.js"
   },
-  "keywords": [],
-  "author": "",
-  "license": "ISC",
+  "files": [
+    "dist",
+    "src"
+  ],
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "dev": "vite --port 5199",
+    "test": "echo '開 /m2.html /m25.html (vite dev) 與 /bundle-test.html (靜態) 驗證' && exit 0"
+  },
+  "keywords": [
+    "shell",
+    "browser-shell",
+    "embeddable",
+    "virtual-fs",
+    "opfs",
+    "zenfs",
+    "posix",
+    "bash",
+    "interpreter"
+  ],
+  "license": "MIT",
   "dependencies": {
     "@xterm/addon-fit": "^0.11.0",
     "@xterm/xterm": "^6.0.0",
     "@zenfs/core": "^2.6.2",
     "@zenfs/dom": "^1.2.10",
     "bash-parser": "^0.5.0",
+    "fast-glob": "^3.3.2",
     "memfs": "^4.68.0",
     "path-browserify": "^1.0.1",
     "shelljs": "^0.10.0"

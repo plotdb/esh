@@ -34,7 +34,7 @@ esbuild.build({
   bundle: true,
   format: "esm",
   platform: "browser",
-  outfile: r("../dist/browser-shell.js"),
+  outfile: r("../dist/esh.js"),
   alias,
   inject: [r("../src/global-inject.js")],
   define: { "process.env.NODE_ENV": "\"production\"" },
