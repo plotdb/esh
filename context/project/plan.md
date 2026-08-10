@@ -143,7 +143,8 @@ alias 機關、execa stub 一併移除;base 的 ctx 縮為 { fs, parse }。
   - `@plotdb/esh` — 主套件。exports:browser 條件 → dist/esh.js
     (self-contained bundle);default → src/node-entry.js(Node 零墊片);
     `/base`(esh(ctx) factory)、`/core`(零依賴直譯器)子路徑供進階使用
-  - `@plotdb/esh-term`(未來,選配):xterm UI + worker entry 成品
+  - esh-term:~~另開套件~~ → **併入主套件、分檔出貨**(20260810 定案):
+    dist/esh-term.{js,iife.js,css} + esh-worker.js,exports ./term ./worker
 - API 名同套件名:`esh(ctx)`。
 
 ## 目前狀態
@@ -162,7 +163,10 @@ alias 機關、execa stub 一併移除;base 的 ctx 縮為 { fs, parse }。
 - [x] 語法邊角全數完成(m25 72/72,見 tasks/syntax-edges.md 與 logs/20260810-syntax-edges.md)
 - [x] 兩層式打包 PoC(base factory + esbuild bundle,零 bundler 8/8,
   見 logs/20260810-two-layer-bundle.md)
-- [ ] M3 uutils WASM PoC
+- [x] 定名 @plotdb/esh、esh-term 併入主套件、repo 定形、README 英文化
+  (見 logs/20260810-package-shape.md;poc-shelljs 已移除)
+- [ ] npm publish(build 後 publish;checklist 見 logs/20260810-package-shape.md)
+- [ ] M3 WASM PoC(依 plan 上方評估:優先 busybox,uutils 為 fallback)
 
 ## 參考
 
