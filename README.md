@@ -20,7 +20,7 @@ project plan for the evolution roadmap.
       import { createShell } from '@plotdb/esh';   // with a bundler
       // or directly: import { createShell } from './dist/esh.js';
       const sh = await createShell();
-      const r = sh.run('ls | grep foo');           // { stdout, stderr, code }
+      const r = await sh.run('ls | grep foo');     // { stdout, stderr, code }
     </script>
 
 With OPFS persistence:
@@ -53,6 +53,41 @@ With OPFS persistence:
 ESM: `import { createTerminal } from '@plotdb/esh/term'`. The shell runs in a
 Web Worker ( `esh-worker.js`, which contains the full engine ), with `/home`
 mounted on OPFS for persistence.
+
+### Cross-thread shell ( `serveShell` / `connectShell` )
+
+Serve a shell from a worker and use it from the main thread ( or any
+`postMessage`-shaped transport ). Multiple clients can share one worker:
+
+    // worker
+    import { createShell, serveShell } from '@plotdb/esh';
+    const sh = await createShell({ mounts: { '/home': { backend: 'opfs' } } });
+    serveShell(sh, self);
+
+    // main thread
+    import { connectShell } from '@plotdb/esh';
+    const sh = await connectShell(worker);       // or a worker URL
+    await sh.run('ls');
+    await sh.io.writeFile('/home/web/data.csv', text);   // content bypasses the parser
+    await sh.io.readFile('/home/web/img.png', null);     // Uint8Array
+
+Local shells expose the same `sh.io` subset, so consumer code works with
+either. `serveShell` uses `addEventListener` and only handles its own message
+types ( `exec` / `fs` / `hello` ) — your own worker protocol can coexist.
+
+### Git ( optional command pack, `@plotdb/esh/git` )
+
+Local-only git commands backed by isomorphic-git ( `init` / `config` / `add` /
+`status` / `commit` / `log` / `branch` / `checkout` ). Not included in the main
+bundle — opt in per shell:
+
+    import { createShell } from '@plotdb/esh';
+    import { installGit } from '@plotdb/esh/git';
+    const sh = installGit(await createShell());
+    await sh.run('git init && git config user.name me && git config user.email m@e');
+    await sh.run('echo hi > a.txt && git add . && git commit -m first');
+
+Network commands ( clone / fetch / pull / push ) are not supported yet.
 
 ### Advanced: bring your own dependencies ( base layer )
 

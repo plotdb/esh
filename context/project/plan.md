@@ -223,6 +223,9 @@ postMessage 方言。提案與評估見 tasks/serve-connect-shell.md。
 - [x] 0.2.0 serveShell / connectShell(exec+fs+hello 協定、sh.io/sh.cwd、
   dogfooding worker+term、test/remote.mjs 17/17;評估與定案見
   tasks/serve-connect-shell.md)
+- [x] 0.3.0 git command pack(isomorphic-git;ctx.esh 介面、./git entry、
+  test/git.mjs 20/20、OPFS 實機含 symlink roundtrip;
+  見 tasks/git-support/)
 - [ ] M3 WASM PoC(依 plan 上方評估:優先 busybox,uutils 為 fallback)
 - [ ] backlog(peer review 0.1.0 發現, pre-existing 非回歸):
   (1) break 丟出時 CompoundList 當輪已累積 stdout 被丟棄

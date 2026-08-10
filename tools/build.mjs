@@ -43,19 +43,22 @@ const common = {
 const engine = { ...common, entryPoints: [r("../src/bundle-entry.js")] };
 const termE = { ...common, entryPoints: [r("../src/term-entry.js")] };
 const workerE = { ...common, entryPoints: [r("../src/shell.worker.js")] };
+const gitE = { ...common, entryPoints: [r("../src/git-command.js")] }; // optional pack, 主 entry 不得混入
 
 Promise.all([
   esbuild.build({ ...engine, format: "esm", outfile: r("../dist/esh.js") }),
   esbuild.build({ ...engine, format: "iife", globalName: "esh", outfile: r("../dist/esh.iife.js") }),
   esbuild.build({ ...termE, format: "esm", outfile: r("../dist/esh-term.js") }),
   esbuild.build({ ...termE, format: "iife", globalName: "eshTerm", outfile: r("../dist/esh-term.iife.js") }),
-  esbuild.build({ ...workerE, format: "esm", outfile: r("../dist/esh-worker.js") })
+  esbuild.build({ ...workerE, format: "esm", outfile: r("../dist/esh-worker.js") }),
+  esbuild.build({ ...gitE, format: "esm", outfile: r("../dist/esh-git.js") }),
+  esbuild.build({ ...gitE, format: "iife", globalName: "eshGit", outfile: r("../dist/esh-git.iife.js") })
 ]).then(() => {
   mkdirSync(r("../web/static/assets/esh"), { recursive: true });
   [
     "esh.js", "esh.iife.js",
     "esh-term.js", "esh-term.css", "esh-term.iife.js", "esh-term.iife.css",
-    "esh-worker.js"
+    "esh-worker.js", "esh-git.js", "esh-git.iife.js"
   ].forEach((f) => copyFileSync(r("../dist/" + f), r("../web/static/assets/esh/" + f)));
   console.log("done (dist/ + web/static/assets/esh/)");
 }).catch(() => process.exit(1));

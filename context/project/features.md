@@ -65,6 +65,21 @@ function/return/local、break/continue(含層數)、export/unset、~ 展開
   worker 內 async 指令可 await postMessage 往返向主執行緒要資料/UI 互動
   (0.0.x 時代需 SAB+Atomics+coi-sw 同步阻塞, 0.1.0 起不再需要)。
 
+## git(0.3.0, optional command pack)
+
+- `@plotdb/esh/git`:`gitCommands(opts)` / `installGit(sh, opts)`,
+  per-shell 註冊;isomorphic-git 實作, 主 entry 不含(check-bundle 把關)。
+- 指令:init / config / add / status / commit -m / log / branch /
+  checkout(僅 branch/tag)。network(clone/pull/push)另案。
+- commit author:repo config(git config user.name/email)→
+  opts.author → 明確報錯。
+- 自訂指令 ctx 新增 `ctx.esh = {fs, cwd}`(base 注入, subshell 繼承)—
+  想碰檔案的自訂指令用這個, 不只 git。
+- worker 邊界:function 過不了 postMessage — git 只能裝在自己
+  createShell 的一側;esh-term 預設 worker 不含 git。
+- OPFS 注意:剛寫入(尤其 symlink)可能晚一 tick 才被 statusMatrix
+  看到;symlink 本身 commit/checkout roundtrip 驗證 OK(mode 120000)。
+
 ## 跨執行緒協定 serveShell / connectShell(0.2.0)
 
 - shell 側 `serveShell(sh, target, info?)`、使用側
@@ -86,8 +101,9 @@ function/return/local、break/continue(含層數)、export/unset、~ 展開
 
 ## fs
 
-- ZenFS(@zenfs/core),shim 修補四項行為差異(相對路徑 cwd hook、
-  readdir 排序、symlink null type、目錄 chmod EISDIR 靜默)
+- ZenFS(@zenfs/core),shim 修補五項行為差異(相對路徑 cwd hook、
+  readdir 排序、symlink null type、目錄 chmod EISDIR 靜默、
+  chdir 驗證目標存在且為目錄 — 0.3.0, 否則 cd 不存在路徑會誤成功)
 - 掛載:/home → OPFS(WebAccess, 持久)、/tmp → InMemory(預設)
 - Node 宿主可換 memfs 做沙箱(需自行確保 fs/shell 同世界)
 

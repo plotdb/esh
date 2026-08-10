@@ -37,7 +37,8 @@
       ["greet() { echo hi $1; }; greet bundle", "hi bundle"],
       ["echo x > /tmp/o.txt; cat /tmp/o.txt", "x"],
       ["ls src | xargs -n 1 echo item", "item a.js"],
-      ["delay from-promise | cat", "async: from-promise"]
+      ["delay from-promise | cat", "async: from-promise"],
+      ["cd not-exist-xyz || pwd", "/home/web"]
     ];
     let pass = 0;
     const div = document.getElementById("out");
