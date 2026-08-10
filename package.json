@@ -51,16 +51,17 @@
     "shelljs": "^0.10.0"
   },
   "devDependencies": {
+    "@plotdb/guides": "github:plotdb/guides#master",
+    "@zbryikt/template": "^2.4.2",
     "assert": "^2.1.0",
     "buffer": "^6.0.3",
     "esbuild": "^0.28.2",
     "events": "^3.3.0",
+    "fedep": "^1.7.6",
     "stream-browserify": "^3.0.0",
     "util": "^0.12.5",
     "vite": "^8.2.1",
-    "vite-plugin-node-polyfills": "^0.28.0",
-    "@zbryikt/template": "^2.4.2",
-    "@plotdb/guides": "github:plotdb/guides#master"
+    "vite-plugin-node-polyfills": "^0.28.0"
   },
   "unpkg": "dist/esh.iife.js",
   "volta": {
