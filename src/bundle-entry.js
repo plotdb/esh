@@ -8,6 +8,7 @@ import { configure, InMemory } from "@zenfs/core";
 import { WebAccess, IndexedDB } from "@zenfs/dom";
 import { esh as eshBase } from "./base.js";
 export { registerCommand } from "./core.js"; // 全域註冊 (跨 shell, 慎用)
+export { serveShell, connectShell } from "./remote.js"; // 跨執行緒協定 (0.2.0)
 
 shell.config.silent = true;
 

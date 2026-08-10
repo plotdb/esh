@@ -171,6 +171,32 @@ alias 機關、execa stub 一併移除;base 的 ctx 縮為 { fs, parse }。
   (async 指令直接 await postMessage 往返;exp 端另行處理)
 - 風險:漏 await(靠 m2 81 + m25 72 迴歸網抓)、效能(可忽略)
 
+### serveShell / connectShell(0.2.0,20260810 定案開工)
+
+動機:0802-agent 專案(browser agent runtime)要把 esh 當 runtime,
+主執行緒多個消費者(chat UI / sandbox 渲染 / 檔案上傳)需要跟 worker 內
+shell 互動 — 把「跨執行緒使用 shell」做成正式 API,取代每處自訂
+postMessage 方言。提案與評估見 tasks/serve-connect-shell.md。
+
+- worker 側 `serveShell(sh, target, info?)`:掛協定 handler
+  (addEventListener, 不搶 onmessage);exec 沿用既有格式
+  {id, type:'exec'} → {id, type:'result', stdout, stderr, code, cwd},
+  新增 {id, type:'fs', op, args} 與 {type:'hello'} 握手;
+  exec + fs 進同一條 promise queue;回傳 {dispose}
+- 主執行緒側 `connectShell(workerOrUrl)` → Promise<{run, io, cwd, worker,
+  dispose}>;hello 重試握手(晚 attach 不依賴初始 ready 廣播);
+  id 帶隨機前綴(多 client 不撞號、廣播靠 id 過濾)
+- fs op 白名單僅 readFile / writeFile(control-plane 走 exec;
+  內容不經 shell parser;append 亦然 — read+concat+write);
+  writeFile 自動建父目錄;binary:content 收 string | Uint8Array
+  (structured clone 原生),readFile encoding 預設 utf8、null/'binary'
+  回 Uint8Array
+- base 同步補 `sh.io`(本地 promise 版 readFile/writeFile 同簽名,
+  local/remote drop-in)與 `sh.cwd()`
+- dogfooding:shell.worker.js 改以 esh(ctx) + serveShell 實作
+  (線上協定不變),term.js client 改用 connectShell
+- exports:主 entry re-export;另開 ./remote 子路徑(零依賴)
+
 ## 目前狀態
 
 - [x] StackBlitz jsh 能力盤點(2026-08-09)
@@ -194,6 +220,9 @@ alias 機關、execa stub 一併移除;base 的 ctx 縮為 { fs, parse }。
 - [x] 0.1.0 async core(m2 80/81 等分、m25 72/72、bundle-test 9/9 含 async
   測項、Node 16/16;worker exec 序列化;exp/ 驗證 async ask 指令
   — SAB/Atomics/coi-sw 橋確認可拆)
+- [x] 0.2.0 serveShell / connectShell(exec+fs+hello 協定、sh.io/sh.cwd、
+  dogfooding worker+term、test/remote.mjs 17/17;評估與定案見
+  tasks/serve-connect-shell.md)
 - [ ] M3 WASM PoC(依 plan 上方評估:優先 busybox,uutils 為 fallback)
 - [ ] backlog(peer review 0.1.0 發現, pre-existing 非回歸):
   (1) break 丟出時 CompoundList 當輪已累積 stdout 被丟棄

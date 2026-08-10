@@ -3,6 +3,7 @@
 // 同目錄的 esh-worker.js 建立(bundle 成品的預設行為)
 import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
+import { connectShell } from "./remote.js";
 import "@xterm/xterm/css/xterm.css";
 
 // iife 情境 import.meta 不可用, 以載入當下的 currentScript 為基準
@@ -33,7 +34,7 @@ export function createTerminal(el, opts) {
     worker = new Worker(url, { type: "module" });
   }
 
-  let cwd = "~", buf = "", busy = true, msgId = 0, pending = "";
+  let cwd = "~", buf = "", busy = true, pending = "", sh = null;
   const history = [];
   let histIdx = -1, histStash = "";
   const home = opts.home || "/home/web";
@@ -50,28 +51,21 @@ export function createTerminal(el, opts) {
     term.write(colorErr ? "\x1b[31m" + t + "\x1b[0m\r\n" : t + "\r\n");
   }
 
-  worker.onmessage = (ev) => {
-    const m = ev.data;
-    if(m.type === "ready") {
-      cwd = m.cwd;
-      busy = false;
-      (opts.banner || [
-        "esh — embeddable shell runtime (全部跑在你的瀏覽器裡)",
-        "/home 儲存: " + (m.persist || "?"), ""
-      ]).forEach((l) => term.writeln(l));
-      prompt();
-      if(pending) { const d = pending; pending = ""; handleData(d); }
-      return;
-    }
-    if(m.type === "result") {
-      writeBlock(m.stdout, false);
-      writeBlock(m.stderr, true);
-      cwd = m.cwd;
-      busy = false;
-      prompt();
-      if(pending) { const d = pending; pending = ""; handleData(d); }
-    }
-  };
+  // 0.2.0: 走 connectShell 標準協定(hello 握手, addEventListener 不搶
+  // onmessage — 同一 worker 可同時給別的消費者用)
+  connectShell(worker).then((c) => {
+    sh = c;
+    cwd = c.cwd;
+    busy = false;
+    (opts.banner || [
+      "esh — embeddable shell runtime (全部跑在你的瀏覽器裡)",
+      "/home 儲存: " + (c.ready.persist || "?"), ""
+    ]).forEach((l) => term.writeln(l));
+    prompt();
+    if(pending) { const d = pending; pending = ""; handleData(d); }
+  }).catch((e) => {
+    term.writeln("\x1b[31mshell 連線失敗: " + e.message + "\x1b[0m");
+  });
 
   function submit() {
     term.write("\r\n");
@@ -81,7 +75,14 @@ export function createTerminal(el, opts) {
     if(!cmdline.trim()) { prompt(); return; }
     history.push(cmdline);
     busy = true;
-    worker.postMessage({ id: ++msgId, type: "exec", cmdline });
+    sh.run(cmdline).then((r) => {
+      writeBlock(r.stdout, false);
+      writeBlock(r.stderr, true);
+      cwd = r.cwd;
+      busy = false;
+      prompt();
+      if(pending) { const d = pending; pending = ""; handleData(d); }
+    });
   }
 
   function setLine(s) {

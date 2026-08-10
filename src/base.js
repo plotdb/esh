@@ -39,6 +39,28 @@ export function esh(ctx) {
       Object.assign(state.commands, commandMap(name, fn));
       return api; // 可鏈式呼叫
     },
+    // io: promise 版內容傳輸子集, 與 connectShell 的 io 同簽名 —
+    // local/remote shell 對消費端 drop-in(0.2.0)。任意內容不經 shell
+    // parser, 一律走這裡;fs(node-style, sync/callback)仍在供進階使用。
+    // readFile: encoding 預設 'utf8' 回 string;null/'binary' 回 Uint8Array
+    // writeFile: content 收 string | Uint8Array;自動建父目錄
+    io: {
+      readFile: async (path, encoding) => {
+        if(encoding === undefined) encoding = "utf8";
+        if(encoding === null || encoding === "binary") {
+          // new Uint8Array(typedArray) 是複製 — 斷開 Buffer pool 底層,
+          // structured clone 才不會拖整個 pool 的 ArrayBuffer 過去
+          return new Uint8Array(ctx.fs.readFileSync(path));
+        }
+        return String(ctx.fs.readFileSync(path, encoding));
+      },
+      writeFile: async (path, content) => {
+        const dir = path.slice(0, path.lastIndexOf("/"));
+        if(dir) ctx.fs.mkdirSync(dir, { recursive: true });
+        ctx.fs.writeFileSync(path, content);
+      }
+    },
+    cwd: () => String(ctx.shell.pwd()),
     context: state,
     createContext,
     fs: ctx.fs

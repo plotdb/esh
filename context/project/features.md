@@ -65,6 +65,25 @@ function/return/local、break/continue(含層數)、export/unset、~ 展開
   worker 內 async 指令可 await postMessage 往返向主執行緒要資料/UI 互動
   (0.0.x 時代需 SAB+Atomics+coi-sw 同步阻塞, 0.1.0 起不再需要)。
 
+## 跨執行緒協定 serveShell / connectShell(0.2.0)
+
+- shell 側 `serveShell(sh, target, info?)`、使用側
+  `connectShell(workerOrUrl)` → Promise<{run, io, cwd, ready, worker,
+  dispose}> — 與 createShell 同形狀子集, 消費端 local/remote drop-in。
+- 協定:exec 沿用 worker 既有格式;`{type:'fs', op, args}` 傳內容
+  (白名單僅 readFile/writeFile — 路徑操作走 exec, 內容不經 shell parser;
+  append 用 read+concat+write, 同一 queue 序列化無 race);
+  `{type:'hello'}` 握手(重試, 不依賴初始 ready 廣播)。
+- binary:writeFile 收 string | Uint8Array;readFile encoding 預設
+  utf8 回 string, null/'binary' 回 Uint8Array(structured clone 原生)。
+- 多 client:同一 worker 可掛多個 connectShell(id 隨機前綴過濾廣播);
+  serveShell 用 addEventListener, 使用方自己的協定可並存
+  (type 避開 exec/fs/hello)。
+- transport-agnostic:target 只需 postMessage/addEventListener 形狀,
+  跨裝置可自寫 adapter(序列化自理)。
+- 本地對應:`sh.io.readFile/writeFile`(promise, 同簽名)、`sh.cwd()`。
+- dogfooding:esh-worker 以 serveShell 實作、term client 以 connectShell。
+
 ## fs
 
 - ZenFS(@zenfs/core),shim 修補四項行為差異(相對路徑 cwd hook、
@@ -81,6 +100,8 @@ function/return/local、break/continue(含層數)、export/unset、~ 展開
 - / (index.pug) — 終端主畫面 + tests popup 5/5(npm start)
 - `npm test` — Node async-core 迴歸(並發 run 序列化/展開鏈/reject/
   async×語法混合 21 測項;test/async-core.mjs, 零瀏覽器)
+  + remote 協定 17 測項(晚掛握手/多 client/並存/序列化/binary/dispose;
+  test/remote.mjs, loopback 假 target)
 - web/static/async-test.html — dist 成品時序測試(A 並發序列化/B 展開鏈/
   C reject/D worker 佇列;時序機制要兩件事同時在飛才測得到, 故獨立成頁)
 - Node:`node --input-type=module -e "import('./src/node-entry.js')..."`
