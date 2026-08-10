@@ -49152,7 +49152,7 @@ var esh = (() => {
   function ReturnSig(code) {
     this.code = code || 0;
   }
-  function wordSegments(word, ctx) {
+  async function wordSegments(word, ctx) {
     const src = word.text;
     const exps = (word.expansion || []).filter(
       (e) => e.loc && e.loc.start >= 0 && e.loc.end >= e.loc.start && e.loc.end < src.length && (src.charAt(e.loc.start) === "$" || src.charAt(e.loc.start) === "`")
@@ -49174,7 +49174,7 @@ var esh = (() => {
       }
       if (cur) segments.push({ text: cur, quoted: inDouble, expansion: false });
     }
-    exps.forEach((e) => {
+    for (const e of exps) {
       literal(src.slice(pos, e.loc.start));
       let v = "", list2 = null;
       if (e.type === "ParameterExpansion") {
@@ -49187,26 +49187,26 @@ var esh = (() => {
         else if (e.parameter === "#") v = String(ctx.positional.length);
         else v = ctx.vars[e.parameter] !== void 0 ? String(ctx.vars[e.parameter]) : "";
       } else if (e.type === "CommandExpansion") {
-        const r = evalNode(e.commandAST, ctx, null);
+        const r = await evalNode(e.commandAST, ctx, null);
         v = (r.stdout || "").replace(/\n+$/, "");
       } else if (e.type === "ArithmeticExpansion") {
         v = String(evalArith(e.arithmeticAST, ctx));
       }
       segments.push({ text: v, quoted: inDouble, expansion: true, list: list2 });
       pos = e.loc.end + 1;
-    });
+    }
     literal(src.slice(pos));
     return segments;
   }
-  function expandString(word, ctx) {
-    const segs = wordSegments(word, ctx);
+  async function expandString(word, ctx) {
+    const segs = await wordSegments(word, ctx);
     let t = segs.map((s) => s.text).join("");
     if (word.text.charAt(0) === "~" && (t === "~" || t.slice(0, 2) === "~/"))
       t = ctx.vars.HOME + t.slice(1);
     return t;
   }
-  function expandWordToFields(word, ctx) {
-    const segs = wordSegments(word, ctx);
+  async function expandWordToFields(word, ctx) {
+    const segs = await wordSegments(word, ctx);
     const fields = [];
     let cur = null;
     const ensure = () => {
@@ -49443,31 +49443,26 @@ var esh = (() => {
   function normalizeCmdResult(r) {
     if (typeof r === "string") return { stdout: r, stderr: "", code: 0 };
     if (!r) return { stdout: "", stderr: "", code: 0 };
-    if (typeof r.then === "function") {
-      r.catch(() => {
-      });
-      return { stdout: "", stderr: "async \u81EA\u8A02\u6307\u4EE4\u4E0D\u652F\u63F4 (evaluator \u70BA\u540C\u6B65, \u56DE\u50B3 Promise \u7121\u6CD5\u7B49\u5F85)", code: 1 };
-    }
     return {
       stdout: r.stdout === void 0 ? "" : String(r.stdout),
       stderr: r.stderr === void 0 ? "" : String(r.stderr),
       code: Number(r.code) || 0
     };
   }
-  function callBuiltin(name, argv, stdin, ctx) {
+  async function callBuiltin(name, argv, stdin, ctx) {
     if (ctx.funcs[name]) return callFunction(ctx.funcs[name], argv, ctx, stdin);
     const custom = ctx.commands && ctx.commands[name] || globalCommands[name];
     const fn2 = custom || builtins[name];
     if (!fn2) return { stdout: "", stderr: name + ": command not found", code: 127 };
     try {
-      const r = fn2(argv, stdin, ctx);
+      const r = await fn2(argv, stdin, ctx);
       return custom ? normalizeCmdResult(r) : r;
     } catch (e) {
       if (e instanceof BreakSig || e instanceof ContinueSig || e instanceof ReturnSig) throw e;
       return { stdout: "", stderr: name + ": " + e.message, code: 1 };
     }
   }
-  builtins.xargs = (args2, stdin, ctx) => {
+  builtins.xargs = async (args2, stdin, ctx) => {
     let n = 0, perLine = false, placeholder = null;
     let i = 0;
     for (; i < args2.length; i++) {
@@ -49499,15 +49494,15 @@ var esh = (() => {
       else batches.push(tokens);
     }
     let out = "", errs = [], worst = 0;
-    batches.forEach((batch) => {
+    for (const batch of batches) {
       let argv;
       if (placeholder) argv = base.map((a) => a.split(placeholder).join(batch[0]));
       else argv = base.concat(batch);
-      const r = callBuiltin(cmd, argv, null, ctx);
+      const r = await callBuiltin(cmd, argv, null, ctx);
       if (r.stdout) out += r.stdout + (r.stdout.charAt(r.stdout.length - 1) === "\n" ? "" : "\n");
       if (r.stderr) errs.push(r.stderr);
       if (r.code > worst) worst = r.code;
-    });
+    }
     return { stdout: out, stderr: errs.join("\n"), code: worst };
   };
   ["ls", "find", "mkdir", "rm", "cp", "mv", "touch", "chmod", "ln"].forEach((c) => {
@@ -49543,39 +49538,39 @@ var esh = (() => {
     } else if (args2.length === 1) ok = args2[0].length > 0;
     return { stdout: "", stderr: "", code: ok ? 0 : 1 };
   }
-  function applyAssignments(list2, ctx) {
-    list2.forEach((a) => {
-      const s = expandString(a, ctx);
+  async function applyAssignments(list2, ctx) {
+    for (const a of list2) {
+      const s = await expandString(a, ctx);
       const i = s.indexOf("=");
       ctx.vars[s.slice(0, i)] = s.slice(i + 1);
-    });
+    }
   }
-  function evalCommand(node, ctx, stdin) {
+  async function evalCommand(node, ctx, stdin) {
     const assignments = [], redirects = [];
     (node.prefix || []).concat(node.suffix || []).forEach((x) => {
       if (x.type === "Redirect") redirects.push(x);
       else if (x.type === "AssignmentWord") assignments.push(x);
     });
     if (!node.name) {
-      applyAssignments(assignments, ctx);
+      await applyAssignments(assignments, ctx);
       return { stdout: "", stderr: "", code: 0 };
     }
     const saved = {};
-    assignments.forEach((a) => {
-      const s = expandString(a, ctx);
+    for (const a of assignments) {
+      const s = await expandString(a, ctx);
       const i = s.indexOf("=");
       const k = s.slice(0, i);
       saved[k] = ctx.vars[k];
       ctx.vars[k] = s.slice(i + 1);
-    });
-    let argv = expandWordToFields(node.name, ctx);
-    (node.suffix || []).forEach((x) => {
-      if (x.type === "Word") argv = argv.concat(expandWordToFields(x, ctx));
-    });
+    }
+    let argv = await expandWordToFields(node.name, ctx);
+    for (const x of node.suffix || []) {
+      if (x.type === "Word") argv = argv.concat(await expandWordToFields(x, ctx));
+    }
     let input = stdin;
-    redirects.forEach((r) => {
+    for (const r of redirects) {
       if (r.op.text === "<") {
-        const target = expandString(r.file, ctx);
+        const target = await expandString(r.file, ctx);
         try {
           input = String(fs.readFileSync(target));
         } catch (e) {
@@ -49587,32 +49582,32 @@ var esh = (() => {
             return ctx.vars[k] !== void 0 ? ctx.vars[k] : "";
           });
       }
-    });
-    let res = callBuiltin(argv[0], argv.slice(1), input, ctx);
-    redirects.forEach((r) => {
-      const target = expandString(r.file, ctx);
+    }
+    let res = await callBuiltin(argv[0], argv.slice(1), input, ctx);
+    for (const r of redirects) {
+      const target = await expandString(r.file, ctx);
       const isErr = r.numberIo && r.numberIo.text === "2";
       const content = isErr ? res.stderr : res.stdout;
       if (r.op.text === ">") {
         shell.ShellString(content).to(target);
       } else if (r.op.text === ">>") {
         shell.ShellString(content).toEnd(target);
-      } else return;
+      } else continue;
       if (isErr) res.stderr = "";
       else res.stdout = "";
-    });
+    }
     Object.keys(saved).forEach((k) => {
       if (saved[k] === void 0) delete ctx.vars[k];
       else ctx.vars[k] = saved[k];
     });
     return res;
   }
-  function callFunction(body, argv, ctx, stdin) {
+  async function callFunction(body, argv, ctx, stdin) {
     const saved = ctx.positional;
     ctx.positional = argv;
     ctx.scopes.push({});
     try {
-      return evalNode(body, ctx, stdin);
+      return await evalNode(body, ctx, stdin);
     } catch (e) {
       if (e instanceof ReturnSig) return { stdout: "", stderr: "", code: e.code };
       throw e;
@@ -49643,59 +49638,57 @@ var esh = (() => {
     if (out && out.charAt(out.length - 1) !== "\n" && b.stdout) out += "\n";
     return { stdout: out + b.stdout, stderr: [a.stderr, b.stderr].filter(Boolean).join("\n"), code: b.code };
   }
-  function evalNode(node, ctx, stdin) {
+  async function evalNode(node, ctx, stdin) {
     switch (node.type) {
       case "Script":
       case "CompoundList": {
         let acc = { stdout: "", stderr: "", code: 0 };
-        (node.commands || []).forEach((c) => {
-          const r = evalNode(c, ctx, null);
+        for (const c of node.commands || []) {
+          const r = await evalNode(c, ctx, null);
           ctx.lastCode = r.code;
           acc = concatRes(acc, r);
-        });
+        }
         return acc;
       }
       case "LogicalExpression": {
-        const left = evalNode(node.left, ctx, null);
+        const left = await evalNode(node.left, ctx, null);
         ctx.lastCode = left.code;
         const runRight = node.op === "and" ? left.code === 0 : left.code !== 0;
         if (!runRight) return left;
-        const right = evalNode(node.right, ctx, null);
+        const right = await evalNode(node.right, ctx, null);
         ctx.lastCode = right.code;
         return concatRes(left, right);
       }
       case "Pipeline": {
         let cur = stdin, res = { stdout: "", stderr: "", code: 0 }, errs = [];
-        node.commands.forEach((c) => {
-          res = evalNode(c, ctx, cur);
+        for (const c of node.commands) {
+          res = await evalNode(c, ctx, cur);
           if (res.stderr) errs.push(res.stderr);
           cur = res.stdout;
-        });
+        }
         ctx.lastCode = res.code;
         return { stdout: res.stdout, stderr: errs.join("\n"), code: res.code };
       }
       case "Command":
         return evalCommand(node, ctx, stdin);
       case "If": {
-        const cond = evalNode(node.clause, ctx, null);
+        const cond = await evalNode(node.clause, ctx, null);
         ctx.lastCode = cond.code;
         let branch = { stdout: "", stderr: "", code: cond.code === 0 ? 0 : ctx.lastCode };
-        if (cond.code === 0) branch = evalNode(node.then, ctx, null);
-        else if (node.else) branch = evalNode(node.else, ctx, null);
+        if (cond.code === 0) branch = await evalNode(node.then, ctx, null);
+        else if (node.else) branch = await evalNode(node.else, ctx, null);
         else branch = { stdout: "", stderr: "", code: 0 };
         ctx.lastCode = branch.code;
         return concatRes({ stdout: cond.stdout, stderr: cond.stderr, code: 0 }, branch);
       }
       case "For": {
         let words = [];
-        (node.wordlist || []).forEach((w) => {
-          words = words.concat(expandWordToFields(w, ctx));
-        });
+        for (const w of node.wordlist || []) words = words.concat(await expandWordToFields(w, ctx));
         let acc = { stdout: "", stderr: "", code: 0 };
         for (let i = 0; i < words.length; i++) {
           ctx.vars[node.name.text] = words[i];
           try {
-            const r = evalNode(node.do, ctx, null);
+            const r = await evalNode(node.do, ctx, null);
             ctx.lastCode = r.code;
             acc = concatRes(acc, r);
           } catch (e) {
@@ -49724,12 +49717,12 @@ var esh = (() => {
         for (; ; ) {
           if (++iter > MAX_LOOP)
             return concatRes(acc, { stdout: "", stderr: "loop aborted: \u8D85\u904E " + MAX_LOOP + " \u6B21\u8FED\u4EE3", code: 1 });
-          const cond = evalNode(node.clause, ctx, null);
+          const cond = await evalNode(node.clause, ctx, null);
           ctx.lastCode = cond.code;
           const go = node.type === "While" ? cond.code === 0 : cond.code !== 0;
           if (!go) break;
           try {
-            const r = evalNode(node.do, ctx, null);
+            const r = await evalNode(node.do, ctx, null);
             ctx.lastCode = r.code;
             acc = concatRes(acc, r);
           } catch (e) {
@@ -49753,13 +49746,19 @@ var esh = (() => {
         return acc;
       }
       case "Case": {
-        const subject = expandString(node.clause, ctx);
+        const subject = await expandString(node.clause, ctx);
         for (let i = 0; i < (node.cases || []).length; i++) {
           const item = node.cases[i];
-          const hit = (item.pattern || []).some((p) => globToRegExp(expandString(p, ctx)).test(subject));
+          let hit = false;
+          for (const p of item.pattern || []) {
+            if (globToRegExp(await expandString(p, ctx)).test(subject)) {
+              hit = true;
+              break;
+            }
+          }
           if (hit) {
             if (!item.body) return { stdout: "", stderr: "", code: 0 };
-            const r = evalNode(item.body, ctx, null);
+            const r = await evalNode(item.body, ctx, null);
             ctx.lastCode = r.code;
             return r;
           }
@@ -49877,7 +49876,7 @@ var esh = (() => {
     }
     return out.join("\n");
   }
-  function run(cmdline, ctx) {
+  async function run(cmdline, ctx) {
     let ast;
     try {
       ast = parse3(normalizeSemicolons(extractHeredocs(cmdline, ctx)), { mode: "posix" });
@@ -49885,7 +49884,7 @@ var esh = (() => {
       return { stdout: "", stderr: "parse error: " + e.message, code: 2 };
     }
     try {
-      return evalNode(ast, ctx, null);
+      return await evalNode(ast, ctx, null);
     } catch (e) {
       return { stdout: "", stderr: "interp error: " + e.message, code: 1 };
     }
@@ -49908,8 +49907,14 @@ var esh = (() => {
     }
     const state = createContext();
     if (ctx.commands) Object.assign(state.commands, commandMap(ctx.commands));
+    let queue = Promise.resolve();
     const api = {
-      run: (cmdline) => run(cmdline, state),
+      run: (cmdline) => {
+        const p = queue.then(() => run(cmdline, state));
+        queue = p.catch(() => {
+        });
+        return p;
+      },
       registerCommand: (name, fn2) => {
         Object.assign(state.commands, commandMap(name, fn2));
         return api;

@@ -25,8 +25,16 @@ export function esh(ctx) {
   const state = createContext();
   // 自訂指令: per-shell registry (ctx.commands 可於建構時給一批)
   if(ctx.commands) Object.assign(state.commands, commandMap(ctx.commands));
+  // run 為 async(0.1.0);同一 shell 的 run 以 promise chain 序列化,
+  // 避免並發 run 交錯互踩共享狀態(vars/cwd/lastCode/positional)。
+  // 回傳各次呼叫自己的結果(非 chain 尾), 錯誤不斷鏈。
+  let queue = Promise.resolve();
   const api = {
-    run: (cmdline) => run(cmdline, state),
+    run: (cmdline) => {
+      const p = queue.then(() => run(cmdline, state));
+      queue = p.catch(() => {});
+      return p;
+    },
     registerCommand: (name, fn) => {
       Object.assign(state.commands, commandMap(name, fn));
       return api; // 可鏈式呼叫

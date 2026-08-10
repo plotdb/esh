@@ -1,5 +1,17 @@
 # Change Logs
 
+## v0.1.0
+
+ - breaking:
+   - evaluator 全面 async 化: `sh.run()` 一律回 Promise<{stdout, stderr, code}>
+     (worker 協定不變, esh-term 使用者無感;直接呼叫 run 的要改 await)
+ - features:
+   - 自訂指令可為 async function / 回傳 Promise(reject → stderr + code 1);
+     pipe / $( ) / redirect / xargs / 迴圈與條件全路徑支援
+   - shell.worker: exec 以 promise chain 序列化, 多個 exec 不交錯共享狀態
+   - base: 同一 shell 的並發 run 亦序列化(promise chain, 錯誤不斷鏈,
+     各呼叫回自己的結果)— sync 時代不可能重入, async 化後的新暴露面
+
 ## v0.0.2
 
  - bugfixes:

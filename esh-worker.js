@@ -6505,16 +6505,16 @@ var init_fs = __esm({
         try {
           const index = new Index();
           const tx = __addDisposableResource(env_3, this.transaction(), true);
-          const queue = [["/", 0]];
+          const queue2 = [["/", 0]];
           const silence = canary(withErrno("EDEADLK"));
-          while (queue.length) {
-            const [path, ino] = queue.shift();
+          while (queue2.length) {
+            const [path, ino] = queue2.shift();
             const inode = new Inode(await tx.get(ino));
             index.set(path, inode);
             if (inode.mode & S_IFDIR) {
               const dir = decodeDirListing(await tx.get(inode.data) ?? _throw(withErrno("ENODATA")));
               for (const [name, id] of Object.entries(dir)) {
-                queue.push([join(path, name), id]);
+                queue2.push([join(path, name), id]);
               }
             }
           }
@@ -6534,16 +6534,16 @@ var init_fs = __esm({
         try {
           const index = new Index();
           const tx = __addDisposableResource(env_4, this.transaction(), false);
-          const queue = [["/", 0]];
+          const queue2 = [["/", 0]];
           const silence = canary(withErrno("EDEADLK"));
-          while (queue.length) {
-            const [path, ino] = queue.shift();
+          while (queue2.length) {
+            const [path, ino] = queue2.shift();
             const inode = new Inode(tx.getSync(ino));
             index.set(path, inode);
             if (inode.mode & S_IFDIR) {
               const dir = decodeDirListing(tx.getSync(inode.data) ?? _throw(withErrno("ENODATA")));
               for (const [name, id] of Object.entries(dir)) {
-                queue.push([join(path, name), id]);
+                queue2.push([join(path, name), id]);
               }
             }
           }
@@ -6968,10 +6968,10 @@ var init_fs = __esm({
           }
           const visitedDirectories = /* @__PURE__ */ new Set();
           let i = 0;
-          const queue = [["/", rootIno]];
-          while (queue.length > 0) {
+          const queue2 = [["/", rootIno]];
+          while (queue2.length > 0) {
             i++;
-            const [path, ino] = queue.shift();
+            const [path, ino] = queue2.shift();
             this._add(ino, path);
             const inodeData = await tx.get(ino);
             if (!inodeData) {
@@ -6994,7 +6994,7 @@ var init_fs = __esm({
             }
             const dirListing = decodeDirListing(dirData);
             for (const [entryName, childIno] of Object.entries(dirListing)) {
-              queue.push([join(path, entryName), childIno]);
+              queue2.push([join(path, entryName), childIno]);
             }
           }
           debug(`Added ${i} existing inode(s) from store`);
@@ -7032,10 +7032,10 @@ var init_fs = __esm({
           }
           const visitedDirectories = /* @__PURE__ */ new Set();
           let i = 0;
-          const queue = [["/", rootIno]];
-          while (queue.length > 0) {
+          const queue2 = [["/", rootIno]];
+          while (queue2.length > 0) {
             i++;
-            const [path, ino] = queue.shift();
+            const [path, ino] = queue2.shift();
             this._add(ino, path);
             const inodeData = tx.getSync(ino);
             if (!inodeData) {
@@ -7058,7 +7058,7 @@ var init_fs = __esm({
             }
             const dirListing = decodeDirListing(dirData);
             for (const [entryName, childIno] of Object.entries(dirListing)) {
-              queue.push([join(path, entryName), childIno]);
+              queue2.push([join(path, entryName), childIno]);
             }
           }
           debug(`Added ${i} existing inode(s) from store`);
@@ -16881,7 +16881,7 @@ var require_operators = __commonJS({
           [options === null || options === void 0 ? void 0 : options.signal].filter(Boolean2)
         );
         const stream = this;
-        const queue = [];
+        const queue2 = [];
         const signalOpt = {
           signal
         };
@@ -16898,7 +16898,7 @@ var require_operators = __commonJS({
           maybeResume();
         }
         function maybeResume() {
-          if (resume && !done && cnt < concurrency && queue.length < highWaterMark) {
+          if (resume && !done && cnt < concurrency && queue2.length < highWaterMark) {
             resume();
             resume = null;
           }
@@ -16923,22 +16923,22 @@ var require_operators = __commonJS({
               }
               cnt += 1;
               PromisePrototypeThen(val, afterItemProcessed, onCatch);
-              queue.push(val);
+              queue2.push(val);
               if (next) {
                 next();
                 next = null;
               }
-              if (!done && (queue.length >= highWaterMark || cnt >= concurrency)) {
+              if (!done && (queue2.length >= highWaterMark || cnt >= concurrency)) {
                 await new Promise2((resolve4) => {
                   resume = resolve4;
                 });
               }
             }
-            queue.push(kEof);
+            queue2.push(kEof);
           } catch (err2) {
             const val = PromiseReject(err2);
             PromisePrototypeThen(val, afterItemProcessed, onCatch);
-            queue.push(val);
+            queue2.push(val);
           } finally {
             done = true;
             if (next) {
@@ -16950,8 +16950,8 @@ var require_operators = __commonJS({
         pump();
         try {
           while (true) {
-            while (queue.length > 0) {
-              const val = await queue[0];
+            while (queue2.length > 0) {
+              const val = await queue2[0];
               if (val === kEof) {
                 return;
               }
@@ -16961,7 +16961,7 @@ var require_operators = __commonJS({
               if (val !== kEmpty) {
                 yield val;
               }
-              queue.shift();
+              queue2.shift();
               maybeResume();
             }
             await new Promise2((resolve4) => {
@@ -27395,15 +27395,15 @@ var require_expand = __commonJS({
     var fill = require_fill_range();
     var stringify = require_stringify();
     var utils = require_utils2();
-    var append = (queue = "", stash = "", enclose = false) => {
+    var append = (queue2 = "", stash = "", enclose = false) => {
       const result = [];
-      queue = [].concat(queue);
+      queue2 = [].concat(queue2);
       stash = [].concat(stash);
-      if (!stash.length) return queue;
-      if (!queue.length) {
+      if (!stash.length) return queue2;
+      if (!queue2.length) {
         return enclose ? utils.flatten(stash).map((ele) => `{${ele}}`) : stash;
       }
-      for (const item of queue) {
+      for (const item of queue2) {
         if (Array.isArray(item)) {
           for (const value of item) {
             result.push(append(value, stash, enclose));
@@ -27449,32 +27449,32 @@ var require_expand = __commonJS({
           return;
         }
         const enclose = utils.encloseBrace(node);
-        let queue = node.queue;
+        let queue2 = node.queue;
         let block = node;
         while (block.type !== "brace" && block.type !== "root" && block.parent) {
           block = block.parent;
-          queue = block.queue;
+          queue2 = block.queue;
         }
         for (let i = 0; i < node.nodes.length; i++) {
           const child = node.nodes[i];
           if (child.type === "comma" && node.type === "brace") {
-            if (i === 1) queue.push("");
-            queue.push("");
+            if (i === 1) queue2.push("");
+            queue2.push("");
             continue;
           }
           if (child.type === "close") {
-            q.push(append(q.pop(), queue, enclose));
+            q.push(append(q.pop(), queue2, enclose));
             continue;
           }
           if (child.value && child.type !== "open") {
-            queue.push(append(queue.pop(), child.value));
+            queue2.push(append(queue2.pop(), child.value));
             continue;
           }
           if (child.nodes) {
             walk(child, node);
           }
         }
-        return queue;
+        return queue2;
       };
       return utils.flatten(walk(ast));
     };
@@ -33442,13 +33442,13 @@ var require_queue = __commonJS({
           cb(null, res);
         }, cb);
       }
-      var queue = fastqueue(context, asyncWrapper, _concurrency);
-      var pushCb = queue.push;
-      var unshiftCb = queue.unshift;
-      queue.push = push;
-      queue.unshift = unshift;
-      queue.drained = drained;
-      return queue;
+      var queue2 = fastqueue(context, asyncWrapper, _concurrency);
+      var pushCb = queue2.push;
+      var unshiftCb = queue2.unshift;
+      queue2.push = push;
+      queue2.unshift = unshift;
+      queue2.drained = drained;
+      return queue2;
       function push(value) {
         var p = new Promise(function(resolve4, reject) {
           pushCb(value, function(err2, result) {
@@ -33478,14 +33478,14 @@ var require_queue = __commonJS({
       function drained() {
         var p = new Promise(function(resolve4) {
           process.nextTick(function() {
-            if (queue.idle()) {
+            if (queue2.idle()) {
               resolve4();
             } else {
-              var previousDrain = queue.drain;
-              queue.drain = function() {
+              var previousDrain = queue2.drain;
+              queue2.drain = function() {
                 if (typeof previousDrain === "function") previousDrain();
                 resolve4();
-                queue.drain = previousDrain;
+                queue2.drain = previousDrain;
               };
             }
           });
@@ -49008,7 +49008,7 @@ function ContinueSig(n) {
 function ReturnSig(code) {
   this.code = code || 0;
 }
-function wordSegments(word, ctx2) {
+async function wordSegments(word, ctx2) {
   const src = word.text;
   const exps = (word.expansion || []).filter(
     (e) => e.loc && e.loc.start >= 0 && e.loc.end >= e.loc.start && e.loc.end < src.length && (src.charAt(e.loc.start) === "$" || src.charAt(e.loc.start) === "`")
@@ -49030,7 +49030,7 @@ function wordSegments(word, ctx2) {
     }
     if (cur) segments.push({ text: cur, quoted: inDouble, expansion: false });
   }
-  exps.forEach((e) => {
+  for (const e of exps) {
     literal(src.slice(pos, e.loc.start));
     let v = "", list2 = null;
     if (e.type === "ParameterExpansion") {
@@ -49043,26 +49043,26 @@ function wordSegments(word, ctx2) {
       else if (e.parameter === "#") v = String(ctx2.positional.length);
       else v = ctx2.vars[e.parameter] !== void 0 ? String(ctx2.vars[e.parameter]) : "";
     } else if (e.type === "CommandExpansion") {
-      const r = evalNode(e.commandAST, ctx2, null);
+      const r = await evalNode(e.commandAST, ctx2, null);
       v = (r.stdout || "").replace(/\n+$/, "");
     } else if (e.type === "ArithmeticExpansion") {
       v = String(evalArith(e.arithmeticAST, ctx2));
     }
     segments.push({ text: v, quoted: inDouble, expansion: true, list: list2 });
     pos = e.loc.end + 1;
-  });
+  }
   literal(src.slice(pos));
   return segments;
 }
-function expandString(word, ctx2) {
-  const segs = wordSegments(word, ctx2);
+async function expandString(word, ctx2) {
+  const segs = await wordSegments(word, ctx2);
   let t = segs.map((s) => s.text).join("");
   if (word.text.charAt(0) === "~" && (t === "~" || t.slice(0, 2) === "~/"))
     t = ctx2.vars.HOME + t.slice(1);
   return t;
 }
-function expandWordToFields(word, ctx2) {
-  const segs = wordSegments(word, ctx2);
+async function expandWordToFields(word, ctx2) {
+  const segs = await wordSegments(word, ctx2);
   const fields = [];
   let cur = null;
   const ensure = () => {
@@ -49288,31 +49288,26 @@ var globalCommands = {};
 function normalizeCmdResult(r) {
   if (typeof r === "string") return { stdout: r, stderr: "", code: 0 };
   if (!r) return { stdout: "", stderr: "", code: 0 };
-  if (typeof r.then === "function") {
-    r.catch(() => {
-    });
-    return { stdout: "", stderr: "async \u81EA\u8A02\u6307\u4EE4\u4E0D\u652F\u63F4 (evaluator \u70BA\u540C\u6B65, \u56DE\u50B3 Promise \u7121\u6CD5\u7B49\u5F85)", code: 1 };
-  }
   return {
     stdout: r.stdout === void 0 ? "" : String(r.stdout),
     stderr: r.stderr === void 0 ? "" : String(r.stderr),
     code: Number(r.code) || 0
   };
 }
-function callBuiltin(name, argv, stdin, ctx2) {
+async function callBuiltin(name, argv, stdin, ctx2) {
   if (ctx2.funcs[name]) return callFunction(ctx2.funcs[name], argv, ctx2, stdin);
   const custom = ctx2.commands && ctx2.commands[name] || globalCommands[name];
   const fn2 = custom || builtins[name];
   if (!fn2) return { stdout: "", stderr: name + ": command not found", code: 127 };
   try {
-    const r = fn2(argv, stdin, ctx2);
+    const r = await fn2(argv, stdin, ctx2);
     return custom ? normalizeCmdResult(r) : r;
   } catch (e) {
     if (e instanceof BreakSig || e instanceof ContinueSig || e instanceof ReturnSig) throw e;
     return { stdout: "", stderr: name + ": " + e.message, code: 1 };
   }
 }
-builtins.xargs = (args2, stdin, ctx2) => {
+builtins.xargs = async (args2, stdin, ctx2) => {
   let n = 0, perLine = false, placeholder = null;
   let i = 0;
   for (; i < args2.length; i++) {
@@ -49344,15 +49339,15 @@ builtins.xargs = (args2, stdin, ctx2) => {
     else batches.push(tokens);
   }
   let out = "", errs = [], worst = 0;
-  batches.forEach((batch) => {
+  for (const batch of batches) {
     let argv;
     if (placeholder) argv = base.map((a) => a.split(placeholder).join(batch[0]));
     else argv = base.concat(batch);
-    const r = callBuiltin(cmd, argv, null, ctx2);
+    const r = await callBuiltin(cmd, argv, null, ctx2);
     if (r.stdout) out += r.stdout + (r.stdout.charAt(r.stdout.length - 1) === "\n" ? "" : "\n");
     if (r.stderr) errs.push(r.stderr);
     if (r.code > worst) worst = r.code;
-  });
+  }
   return { stdout: out, stderr: errs.join("\n"), code: worst };
 };
 ["ls", "find", "mkdir", "rm", "cp", "mv", "touch", "chmod", "ln"].forEach((c) => {
@@ -49388,39 +49383,39 @@ function testCmd(args2) {
   } else if (args2.length === 1) ok = args2[0].length > 0;
   return { stdout: "", stderr: "", code: ok ? 0 : 1 };
 }
-function applyAssignments(list2, ctx2) {
-  list2.forEach((a) => {
-    const s = expandString(a, ctx2);
+async function applyAssignments(list2, ctx2) {
+  for (const a of list2) {
+    const s = await expandString(a, ctx2);
     const i = s.indexOf("=");
     ctx2.vars[s.slice(0, i)] = s.slice(i + 1);
-  });
+  }
 }
-function evalCommand(node, ctx2, stdin) {
+async function evalCommand(node, ctx2, stdin) {
   const assignments = [], redirects = [];
   (node.prefix || []).concat(node.suffix || []).forEach((x) => {
     if (x.type === "Redirect") redirects.push(x);
     else if (x.type === "AssignmentWord") assignments.push(x);
   });
   if (!node.name) {
-    applyAssignments(assignments, ctx2);
+    await applyAssignments(assignments, ctx2);
     return { stdout: "", stderr: "", code: 0 };
   }
   const saved = {};
-  assignments.forEach((a) => {
-    const s = expandString(a, ctx2);
+  for (const a of assignments) {
+    const s = await expandString(a, ctx2);
     const i = s.indexOf("=");
     const k = s.slice(0, i);
     saved[k] = ctx2.vars[k];
     ctx2.vars[k] = s.slice(i + 1);
-  });
-  let argv = expandWordToFields(node.name, ctx2);
-  (node.suffix || []).forEach((x) => {
-    if (x.type === "Word") argv = argv.concat(expandWordToFields(x, ctx2));
-  });
+  }
+  let argv = await expandWordToFields(node.name, ctx2);
+  for (const x of node.suffix || []) {
+    if (x.type === "Word") argv = argv.concat(await expandWordToFields(x, ctx2));
+  }
   let input = stdin;
-  redirects.forEach((r) => {
+  for (const r of redirects) {
     if (r.op.text === "<") {
-      const target = expandString(r.file, ctx2);
+      const target = await expandString(r.file, ctx2);
       try {
         input = String(fs.readFileSync(target));
       } catch (e) {
@@ -49432,32 +49427,32 @@ function evalCommand(node, ctx2, stdin) {
           return ctx2.vars[k] !== void 0 ? ctx2.vars[k] : "";
         });
     }
-  });
-  let res = callBuiltin(argv[0], argv.slice(1), input, ctx2);
-  redirects.forEach((r) => {
-    const target = expandString(r.file, ctx2);
+  }
+  let res = await callBuiltin(argv[0], argv.slice(1), input, ctx2);
+  for (const r of redirects) {
+    const target = await expandString(r.file, ctx2);
     const isErr = r.numberIo && r.numberIo.text === "2";
     const content = isErr ? res.stderr : res.stdout;
     if (r.op.text === ">") {
       shell.ShellString(content).to(target);
     } else if (r.op.text === ">>") {
       shell.ShellString(content).toEnd(target);
-    } else return;
+    } else continue;
     if (isErr) res.stderr = "";
     else res.stdout = "";
-  });
+  }
   Object.keys(saved).forEach((k) => {
     if (saved[k] === void 0) delete ctx2.vars[k];
     else ctx2.vars[k] = saved[k];
   });
   return res;
 }
-function callFunction(body, argv, ctx2, stdin) {
+async function callFunction(body, argv, ctx2, stdin) {
   const saved = ctx2.positional;
   ctx2.positional = argv;
   ctx2.scopes.push({});
   try {
-    return evalNode(body, ctx2, stdin);
+    return await evalNode(body, ctx2, stdin);
   } catch (e) {
     if (e instanceof ReturnSig) return { stdout: "", stderr: "", code: e.code };
     throw e;
@@ -49488,59 +49483,57 @@ function concatRes(a, b) {
   if (out && out.charAt(out.length - 1) !== "\n" && b.stdout) out += "\n";
   return { stdout: out + b.stdout, stderr: [a.stderr, b.stderr].filter(Boolean).join("\n"), code: b.code };
 }
-function evalNode(node, ctx2, stdin) {
+async function evalNode(node, ctx2, stdin) {
   switch (node.type) {
     case "Script":
     case "CompoundList": {
       let acc = { stdout: "", stderr: "", code: 0 };
-      (node.commands || []).forEach((c) => {
-        const r = evalNode(c, ctx2, null);
+      for (const c of node.commands || []) {
+        const r = await evalNode(c, ctx2, null);
         ctx2.lastCode = r.code;
         acc = concatRes(acc, r);
-      });
+      }
       return acc;
     }
     case "LogicalExpression": {
-      const left = evalNode(node.left, ctx2, null);
+      const left = await evalNode(node.left, ctx2, null);
       ctx2.lastCode = left.code;
       const runRight = node.op === "and" ? left.code === 0 : left.code !== 0;
       if (!runRight) return left;
-      const right = evalNode(node.right, ctx2, null);
+      const right = await evalNode(node.right, ctx2, null);
       ctx2.lastCode = right.code;
       return concatRes(left, right);
     }
     case "Pipeline": {
       let cur = stdin, res = { stdout: "", stderr: "", code: 0 }, errs = [];
-      node.commands.forEach((c) => {
-        res = evalNode(c, ctx2, cur);
+      for (const c of node.commands) {
+        res = await evalNode(c, ctx2, cur);
         if (res.stderr) errs.push(res.stderr);
         cur = res.stdout;
-      });
+      }
       ctx2.lastCode = res.code;
       return { stdout: res.stdout, stderr: errs.join("\n"), code: res.code };
     }
     case "Command":
       return evalCommand(node, ctx2, stdin);
     case "If": {
-      const cond = evalNode(node.clause, ctx2, null);
+      const cond = await evalNode(node.clause, ctx2, null);
       ctx2.lastCode = cond.code;
       let branch = { stdout: "", stderr: "", code: cond.code === 0 ? 0 : ctx2.lastCode };
-      if (cond.code === 0) branch = evalNode(node.then, ctx2, null);
-      else if (node.else) branch = evalNode(node.else, ctx2, null);
+      if (cond.code === 0) branch = await evalNode(node.then, ctx2, null);
+      else if (node.else) branch = await evalNode(node.else, ctx2, null);
       else branch = { stdout: "", stderr: "", code: 0 };
       ctx2.lastCode = branch.code;
       return concatRes({ stdout: cond.stdout, stderr: cond.stderr, code: 0 }, branch);
     }
     case "For": {
       let words = [];
-      (node.wordlist || []).forEach((w) => {
-        words = words.concat(expandWordToFields(w, ctx2));
-      });
+      for (const w of node.wordlist || []) words = words.concat(await expandWordToFields(w, ctx2));
       let acc = { stdout: "", stderr: "", code: 0 };
       for (let i = 0; i < words.length; i++) {
         ctx2.vars[node.name.text] = words[i];
         try {
-          const r = evalNode(node.do, ctx2, null);
+          const r = await evalNode(node.do, ctx2, null);
           ctx2.lastCode = r.code;
           acc = concatRes(acc, r);
         } catch (e) {
@@ -49569,12 +49562,12 @@ function evalNode(node, ctx2, stdin) {
       for (; ; ) {
         if (++iter > MAX_LOOP)
           return concatRes(acc, { stdout: "", stderr: "loop aborted: \u8D85\u904E " + MAX_LOOP + " \u6B21\u8FED\u4EE3", code: 1 });
-        const cond = evalNode(node.clause, ctx2, null);
+        const cond = await evalNode(node.clause, ctx2, null);
         ctx2.lastCode = cond.code;
         const go = node.type === "While" ? cond.code === 0 : cond.code !== 0;
         if (!go) break;
         try {
-          const r = evalNode(node.do, ctx2, null);
+          const r = await evalNode(node.do, ctx2, null);
           ctx2.lastCode = r.code;
           acc = concatRes(acc, r);
         } catch (e) {
@@ -49598,13 +49591,19 @@ function evalNode(node, ctx2, stdin) {
       return acc;
     }
     case "Case": {
-      const subject = expandString(node.clause, ctx2);
+      const subject = await expandString(node.clause, ctx2);
       for (let i = 0; i < (node.cases || []).length; i++) {
         const item = node.cases[i];
-        const hit = (item.pattern || []).some((p) => globToRegExp(expandString(p, ctx2)).test(subject));
+        let hit = false;
+        for (const p of item.pattern || []) {
+          if (globToRegExp(await expandString(p, ctx2)).test(subject)) {
+            hit = true;
+            break;
+          }
+        }
         if (hit) {
           if (!item.body) return { stdout: "", stderr: "", code: 0 };
-          const r = evalNode(item.body, ctx2, null);
+          const r = await evalNode(item.body, ctx2, null);
           ctx2.lastCode = r.code;
           return r;
         }
@@ -49722,7 +49721,7 @@ function extractHeredocs(src, ctx2) {
   }
   return out.join("\n");
 }
-function run(cmdline, ctx2) {
+async function run(cmdline, ctx2) {
   let ast;
   try {
     ast = parse3(normalizeSemicolons(extractHeredocs(cmdline, ctx2)), { mode: "posix" });
@@ -49730,7 +49729,7 @@ function run(cmdline, ctx2) {
     return { stdout: "", stderr: "parse error: " + e.message, code: 2 };
   }
   try {
-    return evalNode(ast, ctx2, null);
+    return await evalNode(ast, ctx2, null);
   } catch (e) {
     return { stdout: "", stderr: "interp error: " + e.message, code: 1 };
   }
@@ -49777,12 +49776,14 @@ try {
 if (!fs_zen_shim_default.existsSync("/home/web/README.md")) seed();
 import_shelljs2.default.cd("/home/web");
 var ctx = createContext();
+var queue = Promise.resolve();
 self.onmessage = (ev) => {
   const msg = ev.data;
-  if (msg.type === "exec") {
+  if (msg.type !== "exec") return;
+  queue = queue.then(async () => {
     let r;
     try {
-      r = run(msg.cmdline, ctx);
+      r = await run(msg.cmdline, ctx);
     } catch (e) {
       r = { stdout: "", stderr: "internal: " + e.message, code: 1 };
     }
@@ -49794,7 +49795,7 @@ self.onmessage = (ev) => {
       code: r.code || 0,
       cwd: String(import_shelljs2.default.pwd())
     });
-  }
+  });
 };
 self.postMessage({ type: "ready", cwd: String(import_shelljs2.default.pwd()), persist });
 /*! Bundled license information:
