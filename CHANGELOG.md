@@ -2,6 +2,8 @@
 
 ## master
 
+ - tweaks:
+   - 移除 poc-shelljs/(內容已全數遷移, git history 保留完整演進)
  - features:
    - esh-term: 終端隨主套件分檔出貨(dist/esh-term.{js,iife.js,css} +
      esh-worker.js), createTerminal(el, opts); vite 頁與 bundle 共用 src/term.js;

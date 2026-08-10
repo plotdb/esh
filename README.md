@@ -76,7 +76,7 @@ const sh = esh({ fs, shell, parse, fg });    // 依賴自備, bundler-agnostic
 - `npm start` — fedev template server(web/:pug demo 與靜態頁,只消費 dist 成品)
 
 vite 僅供 web/vitedev/ 測試頁(需 source-level alias);成品與 web/ demo 皆不依賴 vite。
-poc-shelljs/ 為早期 PoC 歷史參照,不再維護。
+早期 PoC(poc-shelljs/)已移除,完整演進見 git history。
 
 
 ## License
