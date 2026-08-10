@@ -15171,7 +15171,23 @@ ${obj.gpgsig ? obj.gpgsig : ""}`;
       const fs = ctx.esh.fs;
       const cwd2 = ctx.esh.cwd();
       const sub = argv[0], args = argv.slice(1);
-      if (!sub) return { stdout: "", stderr: "git: \u7F3A\u5C11 subcommand", code: 1 };
+      if (!sub || sub === "help" || sub === "--help") return {
+        stdout: [
+          "usage: git <command> [args]",
+          "commands:",
+          "  init                     \u5EFA\u7ACB repo",
+          "  config user.name <v>     \u8A2D\u5B9A commit author (user.email \u540C)",
+          "  add <path>|.             stage \u6A94\u6848 (\u542B\u522A\u9664)",
+          "  status                   \u5DE5\u4F5C\u5340\u72C0\u614B (porcelain \u98A8\u683C)",
+          "  commit -m <msg>          \u63D0\u4EA4",
+          "  log [--oneline] [-n N]   \u6B77\u53F2",
+          "  branch [name]            \u5217\u51FA/\u5EFA\u7ACB\u5206\u652F",
+          "  checkout <branch|tag>    \u5207\u63DB (oid detached HEAD \u672A\u652F\u63F4)",
+          "(local only \u2014 clone/fetch/pull/push \u5C1A\u672A\u652F\u63F4)"
+        ].join("\n") + "\n",
+        stderr: "",
+        code: 0
+      };
       if (sub === "init") {
         await init({ fs, dir: cwd2 });
         return "Initialized empty Git repository in " + cwd2 + "/.git\n";

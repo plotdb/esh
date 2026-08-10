@@ -54,7 +54,22 @@ function makeGit(opts) {
     const fs = ctx.esh.fs;
     const cwd = ctx.esh.cwd();
     const sub = argv[0], args = argv.slice(1);
-    if(!sub) return { stdout: "", stderr: "git: 缺少 subcommand", code: 1 };
+    if(!sub || sub === "help" || sub === "--help") return {
+      stdout: [
+        "usage: git <command> [args]",
+        "commands:",
+        "  init                     建立 repo",
+        "  config user.name <v>     設定 commit author (user.email 同)",
+        "  add <path>|.             stage 檔案 (含刪除)",
+        "  status                   工作區狀態 (porcelain 風格)",
+        "  commit -m <msg>          提交",
+        "  log [--oneline] [-n N]   歷史",
+        "  branch [name]            列出/建立分支",
+        "  checkout <branch|tag>    切換 (oid detached HEAD 未支援)",
+        "(local only — clone/fetch/pull/push 尚未支援)"
+      ].join("\n") + "\n",
+      stderr: "", code: 0
+    };
 
     if(sub === "init") {
       await git.init({ fs, dir: cwd });

@@ -1,5 +1,11 @@
 # Change Logs
 
+## v0.3.1
+
+ - tweaks:
+   - 裸打 `git` / `git help` 印 usage(支援 subcommand 清單 + local-only
+     說明, code 0)— 原本回「缺少 subcommand」易誤判為指令不存在
+
 ## v0.3.0
 
  - bugfixes:
