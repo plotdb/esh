@@ -1,5 +1,31 @@
 # Change Logs
 
+## v0.3.0
+
+ - bugfixes:
+   - 瀏覽器端 `cd <不存在目錄>` 誤回成功且 pwd 被改壞 — process-shim 的
+     chdir 從不驗證(shelljs cd 靠 node chdir 丟 ENOENT 判錯)。
+     現由 fs shim 掛 `__eshValidateCwd` hook 驗證目標存在且為目錄
+     (ENOENT/ENOTDIR 語意同 node);Node 宿主本來就正確, 不受影響
+ - features:
+   - optional git command pack `@plotdb/esh/git`(isomorphic-git):
+     `createShell({commands: gitCommands(opts)})` 或 `installGit(sh, opts)`,
+     per-shell 註冊。第一版 local only:init / config(user.name、user.email,
+     commit author 必要)/ add(含 `.`、刪除 stage、子目錄相對路徑 findRoot)/
+     status(porcelain 風格)/ commit -m / log(--oneline、-n)/ branch /
+     checkout(branch/tag;oid detached HEAD 未支援, 明確報錯)。
+     network 指令(clone/fetch/pull/push)另案
+   - core:自訂指令 ctx 新增 `ctx.esh = {fs, cwd}`(base.js 注入,
+     subshell 繼承)— 自訂指令自此可碰檔案, git pack 依賴此介面
+   - exports 新增 `./git`(browser → dist/esh-git.js;Node 直跑 src)
+   - build:dist/esh-git.{js,iife.js};check-bundle 檢查主 entry
+     不混入 isomorphic-git(進 npm test)
+ - 驗證:test/git.mjs 20 案例(Node)+ 瀏覽器 OPFS 實機
+   (含 symlink commit/branch 切換 roundtrip, mode 120000 正確)
+ - 已知注意:OPFS(WebAccess)剛寫入的檔案(尤其 symlink)可能延遲一個
+   tick 才被 statusMatrix 看到;statusMatrix racy-stat(同秒同大小改寫)
+   為 isomorphic-git 既有行為, 見 tasks/git-support/finding.md
+
 ## v0.2.0
 
  - features:

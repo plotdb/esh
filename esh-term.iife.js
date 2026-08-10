@@ -1848,7 +1848,9 @@ var eshTerm = (() => {
             if (seg === "..") parts.pop();
             else parts.push(seg);
           });
-          cwd = "/" + parts.join("/");
+          const target = "/" + parts.join("/");
+          if (globalThis.__eshValidateCwd) globalThis.__eshValidateCwd(target);
+          cwd = target;
           if (globalThis.__syncFsCwd) globalThis.__syncFsCwd(cwd);
         },
         umask: function() {

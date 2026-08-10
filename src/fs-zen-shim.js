@@ -4,6 +4,15 @@
 import { fs, defaultContext } from "@zenfs/core";
 export * from "@zenfs/core";
 globalThis.__syncFsCwd = (dir) => { defaultContext.pwd = dir; };
+// process-shim 的 chdir 用這個驗證目標 (模擬 node chdir 的 ENOENT/ENOTDIR)
+globalThis.__eshValidateCwd = (dir) => {
+  const st = fs.statSync(dir); // 不存在 → zenfs 丟 ENOENT
+  if(!st.isDirectory()) {
+    const e = new Error("ENOTDIR: not a directory, chdir '" + dir + "'");
+    e.code = "ENOTDIR";
+    throw e;
+  }
+};
 defaultContext.pwd = "/home/web";
 
 // --- ZenFS 與 Node fs 的行為差異修補 (M2 存活表驗出) ---

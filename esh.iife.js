@@ -1858,7 +1858,9 @@ var esh = (() => {
             if (seg === "..") parts.pop();
             else parts.push(seg);
           });
-          cwd = "/" + parts.join("/");
+          const target = "/" + parts.join("/");
+          if (globalThis.__eshValidateCwd) globalThis.__eshValidateCwd(target);
+          cwd = target;
           if (globalThis.__syncFsCwd) globalThis.__syncFsCwd(cwd);
         },
         umask: function() {
@@ -23599,6 +23601,14 @@ var esh = (() => {
       init_dist4();
       globalThis.__syncFsCwd = (dir) => {
         defaultContext.pwd = dir;
+      };
+      globalThis.__eshValidateCwd = (dir) => {
+        const st = compat_exports.statSync(dir);
+        if (!st.isDirectory()) {
+          const e = new Error("ENOTDIR: not a directory, chdir '" + dir + "'");
+          e.code = "ENOTDIR";
+          throw e;
+        }
       };
       defaultContext.pwd = "/home/web";
       _readdirSync = compat_exports.readdirSync.bind(compat_exports);
@@ -49055,7 +49065,9 @@ var esh = (() => {
       commands: {},
       positional: [],
       scopes: [],
-      lastCode: 0
+      lastCode: 0,
+      esh: null
+      // base.js 於 esh(ctx) 時填 {fs, cwd} — 供自訂指令碰檔案 (0.3.0)
     };
   }
   function evalArith(n, ctx) {
@@ -49777,7 +49789,8 @@ var esh = (() => {
           commands: ctx.commands,
           positional: ctx.positional,
           scopes: [],
-          lastCode: ctx.lastCode
+          lastCode: ctx.lastCode,
+          esh: ctx.esh
         };
         return evalNode(node.list, sub, stdin);
       }
@@ -49909,6 +49922,7 @@ var esh = (() => {
     }
     const state = createContext();
     if (ctx.commands) Object.assign(state.commands, commandMap(ctx.commands));
+    state.esh = { fs: ctx.fs, cwd: () => String(ctx.shell.pwd()) };
     let queue = Promise.resolve();
     const api = {
       run: (cmdline) => {

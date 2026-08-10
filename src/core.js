@@ -17,7 +17,8 @@ export function createContext() {
     commands: {},
     positional: [],
     scopes: [],
-    lastCode: 0
+    lastCode: 0,
+    esh: null // base.js 於 esh(ctx) 時填 {fs, cwd} — 供自訂指令碰檔案 (0.3.0)
   };
 }
 
@@ -702,7 +703,8 @@ async function evalNode(node, ctx, stdin) {
         commands: ctx.commands,
         positional: ctx.positional,
         scopes: [],
-        lastCode: ctx.lastCode
+        lastCode: ctx.lastCode,
+        esh: ctx.esh
       };
       return evalNode(node.list, sub, stdin);
     }

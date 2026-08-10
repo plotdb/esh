@@ -25,6 +25,8 @@ export function esh(ctx) {
   const state = createContext();
   // 自訂指令: per-shell registry (ctx.commands 可於建構時給一批)
   if(ctx.commands) Object.assign(state.commands, commandMap(ctx.commands));
+  // 自訂指令經 ctx.esh 碰檔案 (git 等 command pack 依賴此介面, 0.3.0)
+  state.esh = { fs: ctx.fs, cwd: () => String(ctx.shell.pwd()) };
   // run 為 async(0.1.0);同一 shell 的 run 以 promise chain 序列化,
   // 避免並發 run 交錯互踩共享狀態(vars/cwd/lastCode/positional)。
   // 回傳各次呼叫自己的結果(非 chain 尾), 錯誤不斷鏈。
