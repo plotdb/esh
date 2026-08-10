@@ -20,6 +20,12 @@
     "shelljs": "^0.10.0"
   },
   "devDependencies": {
+    "assert": "^2.1.0",
+    "buffer": "^6.0.3",
+    "esbuild": "^0.28.2",
+    "events": "^3.3.0",
+    "stream-browserify": "^3.0.0",
+    "util": "^0.12.5",
     "vite": "^8.2.1",
     "vite-plugin-node-polyfills": "^0.28.0"
   }

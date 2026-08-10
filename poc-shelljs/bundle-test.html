@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>browser-shell bundle test (no bundler)</title>
+  <style>
+    body { font-family: monospace; margin: 2rem; background: #1e1e2e; color: #cdd6f4; }
+    .case { margin: .5rem 0; padding: .4rem .7rem; background: #313244; border-radius: 6px; }
+    .cmd { color: #89b4fa; }
+    .out { white-space: pre-wrap; }
+    .pass { color: #a6e3a1; } .fail { color: #f38ba8; }
+  </style>
+</head>
+<body>
+  <h3>browser-shell — self-contained ESM,純靜態 server,零 bundler</h3>
+  <div id="summary"></div>
+  <div id="out"></div>
+  <script type="module">
+    import { createShell, fs } from "./dist/browser-shell.js";
+
+    const sh = await createShell();
+    // 用 bundle 匯出的 fs 種測試檔
+    fs.mkdirSync("/home/web/src", { recursive: true });
+    fs.writeFileSync("/home/web/README.md", "# demo\nfind the needle here\n");
+    fs.writeFileSync("/home/web/src/a.js", "console.log('needle');\n");
+    fs.writeFileSync("/home/web/nums.txt", "10\n2\n33\n4\n");
+    sh.run("cd /home/web");
+
+    const cases = [
+      ["ls", "README.md\nnums.txt\nsrc"],
+      ["cat README.md | grep needle", "find the needle here"],
+      ["sort -n nums.txt | head -n 2", "2\n4"],
+      ["for f in src/*; do echo ==$f; done", "==src/a.js"],
+      ["i=0; while [ $i -lt 3 ]; do echo $i; i=$((i+1)); done", "0\n1\n2"],
+      ["greet() { echo hi $1; }; greet bundle", "hi bundle"],
+      ["echo x > /tmp/o.txt; cat /tmp/o.txt", "x"],
+      ["ls src | xargs -n 1 echo item", "item a.js"]
+    ];
+    let pass = 0;
+    const div = document.getElementById("out");
+    cases.forEach(([cmd, want]) => {
+      const r = sh.run(cmd);
+      const got = (r.stdout || "").replace(/\n+$/, "");
+      const ok = got === want;
+      if(ok) pass++;
+      const d = document.createElement("div");
+      d.className = "case";
+      d.innerHTML = "<span class='" + (ok ? "pass'>✔" : "fail'>✘") + "</span> <span class='cmd'></span><div class='out'></div>";
+      d.querySelector(".cmd").textContent = " $ " + cmd;
+      d.querySelector(".out").textContent = ok ? got : "got: " + got + "\nwant: " + want + (r.stderr ? "\nerr: " + r.stderr : "");
+      div.appendChild(d);
+    });
+    document.getElementById("summary").textContent = pass + " / " + cases.length + " passed";
+    console.log("[bundle-test] " + pass + "/" + cases.length);
+    window.sh = sh;
+  </script>
+</body>
+</html>

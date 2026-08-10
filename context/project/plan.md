@@ -92,6 +92,49 @@
    兩個 track 在同一個「磁碟」上互通。(~1 天)
 6. **M6 — 決策**:整理比較表,決定產品採用的組合與範圍。
 
+## 模組化與演化路線(20260810 定案)
+
+### 打包:兩層式(不走 Vite plugin,不綁生態系)
+
+- **base 層**:自有程式碼(interp/builtins/worker 協定)改為 factory,
+  依賴全由 ctx 注入:`bsh({ fs, shell, parse, fg })` — 概念同
+  @plotdb/rescope 的 load-to-context 模式。base 本身零 import、
+  bundler-agnostic,可直接給自行管理依賴的使用者。
+- **bundle 層**:esbuild script(非 Vite;alias/polyfill 於打包時解掉)
+  把依賴內容連同 base 包成 self-contained ESM,自帶 ctx 初始化。
+  一般使用者零設定引入,任何 bundler 或 <script type=module> 皆可。
+- 依賴後設資料:輸出 `bsh.pkg.dependencies = [{name, version, path}...]`
+  供 rescope 類工具使用;規格化(JS 版 dependencies 定義)未來在
+  rescope 端討論(已寫入該 repo TODO)。
+- **不變量(重要)**:ctx 中的 `fs` 與 `shell`(shelljs)必須綁同一個
+  fs 實作 — shelljs 的 fs 是它被打包當下 alias 決定的,base 無從代換;
+  bundle 層保證這件事,base 層文件註明,初始化時可做 sanity check。
+- worker 注意:ctx 無法跨 postMessage 傳遞,base factory 需在
+  worker realm 內各自初始化(bundle 層提供 worker entry 成品)。
+
+### shelljs 退場(路線 C,掛觸發條件不排時程)
+
+指令分兩群,命運不同:
+
+1. **text tools(grep/sed/awk)**:不用 JS 重寫 — M3/M4 的 WASM
+   真工具(busybox/uutils)接手,POSIX 語意正確。
+2. **fs 操作(ls/cp/rm/mv/mkdir/touch/chmod/ln/cat/find)與瑣碎指令
+   (sort/head/tail/uniq/cd/pwd)**:值得自製 — 寫成吃注入 fs 的
+   純函式(createBuiltins(fs)),估 600–1000 行,M2 存活表當驗收。
+
+觸發條件(任一成立才動工,避免為重寫而重寫):
+- 做 M3/M4 時順勢把 grep/sed 換 WASM(shelljs 依賴少一半)
+- shelljs 行為問題需要修的時候(已知案例:dir-glob EISDIR)
+- bundle 體積開始痛的時候
+
+終局:自製 fs-builtins + WASM text tools + 直譯層,shelljs 與
+alias 機關、execa stub 一併移除;base 的 ctx 縮為 { fs, parse }。
+
+### 套件切分
+
+- `browser-shell`(core):base + bundle 成品 + m2/m25 測試(迴歸網)
+- `browser-shell-terminal`(選配):xterm UI + worker entry 成品
+
 ## 目前狀態
 
 - [x] StackBlitz jsh 能力盤點(2026-08-09)
@@ -106,6 +149,8 @@
   M2.5 55/55,/home 掛 WebAccess 實測重整存活,
   見 logs/20260810-zenfs-opfs.md);快照方案不需要了
 - [x] 語法邊角全數完成(m25 72/72,見 tasks/syntax-edges.md 與 logs/20260810-syntax-edges.md)
+- [x] 兩層式打包 PoC(base factory + esbuild bundle,零 bundler 8/8,
+  見 logs/20260810-two-layer-bundle.md)
 - [ ] M3 uutils WASM PoC
 
 ## 參考

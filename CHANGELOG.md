@@ -15,6 +15,9 @@
      /tmp 留 InMemory;seed 抽共用 src/seed.js,fs 存取一律走 alias
    - interp: 語法邊角 — $(( )) 算術、test 數值比較、$@/"$@"、local、
      自訂 IFS、heredoc(parse 前抽出 + 延後展開)、escape(m25 72/72)
+   - 兩層式打包: core 零 import 化(initDeps 注入)+ base.js factory
+     (bsh(ctx))+ bundle-entry/esbuild script → self-contained ESM
+     (零 bundler 可用, gzip 226KB;bundle-test.html 8/8)
  - bug fix:
    - workaround bash-parser 巢狀 compound 一行式 parse 失敗(分號正規化為換行)
    - workaround bash-parser 換行後幽靈 expansion(負數 loc 過濾)

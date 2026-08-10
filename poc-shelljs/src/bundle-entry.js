@@ -1,0 +1,48 @@
+// browser-shell bundle 層 — 依賴於打包時(esbuild alias)解掉,
+// 產出 self-contained ESM: 使用者零設定 import
+import fs from "fs";
+import shell from "shelljs";
+import parse from "bash-parser";
+import fg from "fast-glob";
+import { configure, InMemory } from "@zenfs/core";
+import { WebAccess, IndexedDB } from "@zenfs/dom";
+import { bsh as bshBase } from "./base.js";
+
+shell.config.silent = true;
+
+// 一般用法: createShell() → 直接可用 (InMemory)
+// createShell({ mounts }) → 自訂掛載, 如 OPFS 持久化:
+//   { "/home": { backend: "opfs" } }
+export function createShell(opts) {
+  const p = (opts && opts.mounts) ? mountAll(opts.mounts) : Promise.resolve();
+  return p.then(() => bshBase({ fs, shell, parse, fg }));
+}
+
+function mountAll(mounts) {
+  const spec = {};
+  const keys = Object.keys(mounts);
+  return keys.reduce((p, k) => p.then(() => {
+    const m = mounts[k];
+    if(m.backend === "opfs")
+      return navigator.storage.getDirectory().then((handle) => {
+        spec[k] = { backend: WebAccess, handle };
+      });
+    if(m.backend === "indexeddb") { spec[k] = { backend: IndexedDB }; return; }
+    if(m.backend === "memory") { spec[k] = { backend: InMemory }; return; }
+    spec[k] = m; // 進階: 直接給 zenfs backend 設定
+  }), Promise.resolve()).then(() => configure({ mounts: spec }));
+}
+
+export const bsh = bshBase;
+export { fs };
+
+bshBase.pkg = {
+  name: "browser-shell",
+  dependencies: [
+    { name: "shelljs", version: "0.10.0" },
+    { name: "bash-parser", version: "0.5.0" },
+    { name: "fast-glob", version: "3.x" },
+    { name: "@zenfs/core", version: "2.6.2" },
+    { name: "@zenfs/dom", version: "1.x" }
+  ]
+};
