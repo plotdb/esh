@@ -14,6 +14,7 @@ export function createContext() {
   return {
     vars: { HOME: "/home/web", PATH: "/bin" },
     funcs: {},
+    commands: {},
     positional: [],
     scopes: [],
     lastCode: 0
@@ -220,7 +221,7 @@ function expandWordToFields(word, ctx) {
 function norm(o) {
   if(o === null || o === undefined) return { stdout: "", stderr: "", code: 0 };
   if(typeof o === "object" && o.stdout !== undefined)
-    return { stdout: String(o.stdout), stderr: o.stderr ? String(o.stderr) : "", code: o.code || 0 };
+    return { stdout: String(o.stdout), stderr: o.stderr ? String(o.stderr) : "", code: Number(o.code) || 0 };
   if(Array.isArray(o)) return { stdout: o.join("\n"), stderr: "", code: 0 };
   return { stdout: String(o), stderr: "", code: 0 };
 }
@@ -359,11 +360,51 @@ const builtins = {
   }
 };
 
+// ---------- 自訂指令 ----------
+// 簽名同 builtin: (argv, stdin, ctx) → {stdout, stderr, code}
+// 寬鬆回傳: 字串視為 stdout(code 0), undefined 視為空輸出成功。
+// per-shell 註冊掛在 ctx.commands(經由 base.js 的 registerCommand);
+// 此處 globalCommands 為全域 registry — 同 realm 所有 shell 共用, 慎用。
+// 查找順序: shell function → ctx.commands → globalCommands → builtins。
+const globalCommands = {};
+
+export function commandMap(name, fn) {
+  const map = (typeof name === "string") ? { [name]: fn } : (name || {});
+  Object.keys(map).forEach((k) => {
+    if(typeof map[k] !== "function")
+      throw new Error("registerCommand: '" + k + "' 不是 function");
+  });
+  return map;
+}
+
+// 全域註冊: registerCommand(name, fn) 或 registerCommand({name: fn, ...})
+export function registerCommand(name, fn) {
+  Object.assign(globalCommands, commandMap(name, fn));
+}
+
+function normalizeCmdResult(r) {
+  if(typeof r === "string") return { stdout: r, stderr: "", code: 0 };
+  if(!r) return { stdout: "", stderr: "", code: 0 };
+  if(typeof r.then === "function") {
+    r.catch(() => {}); // 吞掉 rejection, 避免 unhandled rejection 弄死宿主
+    return { stdout: "", stderr: "async 自訂指令不支援 (evaluator 為同步, 回傳 Promise 無法等待)", code: 1 };
+  }
+  return {
+    stdout: r.stdout === undefined ? "" : String(r.stdout),
+    stderr: r.stderr === undefined ? "" : String(r.stderr),
+    code: Number(r.code) || 0
+  };
+}
+
 function callBuiltin(name, argv, stdin, ctx) {
   if(ctx.funcs[name]) return callFunction(ctx.funcs[name], argv, ctx, stdin);
-  const fn = builtins[name];
+  const custom = (ctx.commands && ctx.commands[name]) || globalCommands[name];
+  const fn = custom || builtins[name];
   if(!fn) return { stdout: "", stderr: name + ": command not found", code: 127 };
-  try { return fn(argv, stdin, ctx); }
+  try {
+    const r = fn(argv, stdin, ctx);
+    return custom ? normalizeCmdResult(r) : r;
+  }
   catch(e) {
     if(e instanceof BreakSig || e instanceof ContinueSig || e instanceof ReturnSig) throw e;
     return { stdout: "", stderr: name + ": " + e.message, code: 1 };
@@ -652,7 +693,16 @@ function evalNode(node, ctx, stdin) {
       ctx.funcs[node.name.text] = node.body;
       return { stdout: "", stderr: "", code: 0 };
     case "Subshell": {
-      const sub = { vars: Object.assign({}, ctx.vars), lastCode: ctx.lastCode };
+      // vars 複本隔離; funcs/commands/positional 共用 reference (subshell 看得到,
+      // 但 subshell 內定義的 function 也會外漏 — 與 bash 不同, 先接受)
+      const sub = {
+        vars: Object.assign({}, ctx.vars),
+        funcs: ctx.funcs,
+        commands: ctx.commands,
+        positional: ctx.positional,
+        scopes: [],
+        lastCode: ctx.lastCode
+      };
       return evalNode(node.list, sub, stdin);
     }
     default:

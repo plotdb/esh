@@ -48396,7 +48396,8 @@ var esh = (() => {
   __export(bundle_entry_exports, {
     createShell: () => createShell,
     esh: () => esh2,
-    fs: () => fs_zen_shim_default
+    fs: () => fs_zen_shim_default,
+    registerCommand: () => registerCommand
   });
   init_global_inject();
   init_fs_zen_shim();
@@ -49049,6 +49050,7 @@ var esh = (() => {
     return {
       vars: { HOME: "/home/web", PATH: "/bin" },
       funcs: {},
+      commands: {},
       positional: [],
       scopes: [],
       lastCode: 0
@@ -49270,7 +49272,7 @@ var esh = (() => {
   function norm(o) {
     if (o === null || o === void 0) return { stdout: "", stderr: "", code: 0 };
     if (typeof o === "object" && o.stdout !== void 0)
-      return { stdout: String(o.stdout), stderr: o.stderr ? String(o.stderr) : "", code: o.code || 0 };
+      return { stdout: String(o.stdout), stderr: o.stderr ? String(o.stderr) : "", code: Number(o.code) || 0 };
     if (Array.isArray(o)) return { stdout: o.join("\n"), stderr: "", code: 0 };
     return { stdout: String(o), stderr: "", code: 0 };
   }
@@ -49426,12 +49428,40 @@ var esh = (() => {
       return { stdout: out + "\n", stderr: "", code: 0 };
     }
   };
+  var globalCommands = {};
+  function commandMap(name, fn2) {
+    const map = typeof name === "string" ? { [name]: fn2 } : name || {};
+    Object.keys(map).forEach((k) => {
+      if (typeof map[k] !== "function")
+        throw new Error("registerCommand: '" + k + "' \u4E0D\u662F function");
+    });
+    return map;
+  }
+  function registerCommand(name, fn2) {
+    Object.assign(globalCommands, commandMap(name, fn2));
+  }
+  function normalizeCmdResult(r) {
+    if (typeof r === "string") return { stdout: r, stderr: "", code: 0 };
+    if (!r) return { stdout: "", stderr: "", code: 0 };
+    if (typeof r.then === "function") {
+      r.catch(() => {
+      });
+      return { stdout: "", stderr: "async \u81EA\u8A02\u6307\u4EE4\u4E0D\u652F\u63F4 (evaluator \u70BA\u540C\u6B65, \u56DE\u50B3 Promise \u7121\u6CD5\u7B49\u5F85)", code: 1 };
+    }
+    return {
+      stdout: r.stdout === void 0 ? "" : String(r.stdout),
+      stderr: r.stderr === void 0 ? "" : String(r.stderr),
+      code: Number(r.code) || 0
+    };
+  }
   function callBuiltin(name, argv, stdin, ctx) {
     if (ctx.funcs[name]) return callFunction(ctx.funcs[name], argv, ctx, stdin);
-    const fn2 = builtins[name];
+    const custom = ctx.commands && ctx.commands[name] || globalCommands[name];
+    const fn2 = custom || builtins[name];
     if (!fn2) return { stdout: "", stderr: name + ": command not found", code: 127 };
     try {
-      return fn2(argv, stdin, ctx);
+      const r = fn2(argv, stdin, ctx);
+      return custom ? normalizeCmdResult(r) : r;
     } catch (e) {
       if (e instanceof BreakSig || e instanceof ContinueSig || e instanceof ReturnSig) throw e;
       return { stdout: "", stderr: name + ": " + e.message, code: 1 };
@@ -49740,7 +49770,14 @@ var esh = (() => {
         ctx.funcs[node.name.text] = node.body;
         return { stdout: "", stderr: "", code: 0 };
       case "Subshell": {
-        const sub = { vars: Object.assign({}, ctx.vars), lastCode: ctx.lastCode };
+        const sub = {
+          vars: Object.assign({}, ctx.vars),
+          funcs: ctx.funcs,
+          commands: ctx.commands,
+          positional: ctx.positional,
+          scopes: [],
+          lastCode: ctx.lastCode
+        };
         return evalNode(node.list, sub, stdin);
       }
       default:
@@ -49870,19 +49907,25 @@ var esh = (() => {
       if (String(e.message).indexOf("esh:") === 0) throw e;
     }
     const state = createContext();
-    return {
+    if (ctx.commands) Object.assign(state.commands, commandMap(ctx.commands));
+    const api = {
       run: (cmdline) => run(cmdline, state),
+      registerCommand: (name, fn2) => {
+        Object.assign(state.commands, commandMap(name, fn2));
+        return api;
+      },
       context: state,
       createContext,
       fs: ctx.fs
     };
+    return api;
   }
 
   // src/bundle-entry.js
   import_shelljs.default.config.silent = true;
   function createShell(opts) {
     const p = opts && opts.mounts ? mountAll(opts.mounts) : Promise.resolve();
-    return p.then(() => esh({ fs: fs_zen_shim_default, shell: import_shelljs.default, parse: import_bash_parser.default, fg: import_fast_glob.default }));
+    return p.then(() => esh({ fs: fs_zen_shim_default, shell: import_shelljs.default, parse: import_bash_parser.default, fg: import_fast_glob.default, commands: opts && opts.commands }));
   }
   function mountAll(mounts2) {
     const spec = {};

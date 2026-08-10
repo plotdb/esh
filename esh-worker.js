@@ -48906,6 +48906,7 @@ function createContext() {
   return {
     vars: { HOME: "/home/web", PATH: "/bin" },
     funcs: {},
+    commands: {},
     positional: [],
     scopes: [],
     lastCode: 0
@@ -49127,7 +49128,7 @@ function expandWordToFields(word, ctx2) {
 function norm(o) {
   if (o === null || o === void 0) return { stdout: "", stderr: "", code: 0 };
   if (typeof o === "object" && o.stdout !== void 0)
-    return { stdout: String(o.stdout), stderr: o.stderr ? String(o.stderr) : "", code: o.code || 0 };
+    return { stdout: String(o.stdout), stderr: o.stderr ? String(o.stderr) : "", code: Number(o.code) || 0 };
   if (Array.isArray(o)) return { stdout: o.join("\n"), stderr: "", code: 0 };
   return { stdout: String(o), stderr: "", code: 0 };
 }
@@ -49283,12 +49284,29 @@ var builtins = {
     return { stdout: out + "\n", stderr: "", code: 0 };
   }
 };
+var globalCommands = {};
+function normalizeCmdResult(r) {
+  if (typeof r === "string") return { stdout: r, stderr: "", code: 0 };
+  if (!r) return { stdout: "", stderr: "", code: 0 };
+  if (typeof r.then === "function") {
+    r.catch(() => {
+    });
+    return { stdout: "", stderr: "async \u81EA\u8A02\u6307\u4EE4\u4E0D\u652F\u63F4 (evaluator \u70BA\u540C\u6B65, \u56DE\u50B3 Promise \u7121\u6CD5\u7B49\u5F85)", code: 1 };
+  }
+  return {
+    stdout: r.stdout === void 0 ? "" : String(r.stdout),
+    stderr: r.stderr === void 0 ? "" : String(r.stderr),
+    code: Number(r.code) || 0
+  };
+}
 function callBuiltin(name, argv, stdin, ctx2) {
   if (ctx2.funcs[name]) return callFunction(ctx2.funcs[name], argv, ctx2, stdin);
-  const fn2 = builtins[name];
+  const custom = ctx2.commands && ctx2.commands[name] || globalCommands[name];
+  const fn2 = custom || builtins[name];
   if (!fn2) return { stdout: "", stderr: name + ": command not found", code: 127 };
   try {
-    return fn2(argv, stdin, ctx2);
+    const r = fn2(argv, stdin, ctx2);
+    return custom ? normalizeCmdResult(r) : r;
   } catch (e) {
     if (e instanceof BreakSig || e instanceof ContinueSig || e instanceof ReturnSig) throw e;
     return { stdout: "", stderr: name + ": " + e.message, code: 1 };
@@ -49597,7 +49615,14 @@ function evalNode(node, ctx2, stdin) {
       ctx2.funcs[node.name.text] = node.body;
       return { stdout: "", stderr: "", code: 0 };
     case "Subshell": {
-      const sub = { vars: Object.assign({}, ctx2.vars), lastCode: ctx2.lastCode };
+      const sub = {
+        vars: Object.assign({}, ctx2.vars),
+        funcs: ctx2.funcs,
+        commands: ctx2.commands,
+        positional: ctx2.positional,
+        scopes: [],
+        lastCode: ctx2.lastCode
+      };
       return evalNode(node.list, sub, stdin);
     }
     default:
