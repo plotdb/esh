@@ -24,7 +24,7 @@
   "scripts": {
     "build": "node tools/build.mjs",
     "dev": "vite --port 5199",
-    "dev:web": "npx server -r web -o true",
+    "start": "npx server -r web -o true",
     "test": "echo 'vite dev: /web/vitedev/m2.html /web/vitedev/m25.html; 靜態: web/static/bundle-test.html' && exit 0"
   },
   "keywords": [
