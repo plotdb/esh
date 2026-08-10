@@ -3,6 +3,9 @@
 ## master
 
  - features:
+   - 套件化: 定名 @plotdb/esh, esh/ 結構整理後拉至 repo 根目錄
+     (src/tools/web;vite 測試頁移 web/dev/;dist 出 esm + iife 雙格式,
+     web/ 走 fedev 慣例消費成品;poc-shelljs/ 保留為歷史參照)
    - poc-shelljs: ShellJS + memfs 於瀏覽器執行(Vite alias fs/process/os/execa 四組 shim)
    - poc-shelljs: M2 指令存活表(81 測項, /m2.html)
    - poc-shelljs: shell 語法直譯層 interp.js — bash-parser + evaluator,

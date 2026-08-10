@@ -1,4 +1,6 @@
-node_modules
-context/cached
 .DS_Store
+context/cached
 dist
+node_modules
+web/.view
+web/static/assets/esh
