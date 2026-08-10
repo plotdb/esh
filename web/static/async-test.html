@@ -1,0 +1,80 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>esh async-core test (dist, no bundler)</title>
+  <style>
+    body { font-family: monospace; margin: 2rem; background: #1e1e2e; color: #cdd6f4; }
+    .case { margin: .5rem 0; padding: .4rem .7rem; background: #313244; border-radius: 6px; }
+    .out { white-space: pre-wrap; }
+    .pass { color: #a6e3a1; } .fail { color: #f38ba8; }
+  </style>
+</head>
+<body>
+  <h3>esh — async core 時序測試(dist 成品;A 並發序列化 / B 展開鏈 / C reject / D worker 佇列)</h3>
+  <div id="summary"></div>
+  <div id="out"></div>
+  <script type="module">
+    import { createShell } from "/assets/esh/esh.js";
+
+    let pass = 0, total = 0;
+    const div = document.getElementById("out");
+    const ok = (name, cond, detail) => {
+      total++;
+      if(cond) pass++;
+      const d = document.createElement("div");
+      d.className = "case";
+      d.innerHTML = "<span class='" + (cond ? "pass'>✔" : "fail'>✘") + "</span> <span></span><div class='out'></div>";
+      d.children[1].textContent = " " + name;
+      d.children[2].textContent = cond ? "" : (detail || "");
+      div.appendChild(d);
+    };
+
+    const sh = await createShell();
+    sh.registerCommand("delay", (argv) =>
+      new Promise((r) => setTimeout(() => r("done-" + argv.join("") + "\n"), 150)));
+    sh.registerCommand("boom", async () => { throw new Error("kaboom"); });
+
+    // A: 並發 run 序列化 — 兩個 run 同時在飛, 不得互踩共享狀態
+    const [a1, a2] = await Promise.all([
+      sh.run("A=first; delay x; echo A=$A"),
+      sh.run("A=second; echo A=$A")
+    ]);
+    ok("[A] 並發 run: r1 保有 A=first", a1.stdout.indexOf("A=first") >= 0, JSON.stringify(a1.stdout));
+    ok("[A] 並發 run: r2 保有 A=second", a2.stdout.indexOf("A=second") >= 0, JSON.stringify(a2.stdout));
+
+    // B: async 指令穿 $() + pipe
+    const b = await sh.run("echo [$(delay sub)] | cat");
+    ok("[B] $(delay) | cat", b.stdout.trim() === "[done-sub]", JSON.stringify(b.stdout));
+
+    // C: async reject → stderr + code 1, 序列化鏈不斷
+    const c1 = await sh.run("boom");
+    const c2 = await sh.run("echo alive");
+    ok("[C] reject → stderr+code 1", c1.code === 1 && c1.stderr.indexOf("kaboom") >= 0, JSON.stringify(c1));
+    ok("[C] 錯誤後鏈不斷", c2.stdout === "alive\n", JSON.stringify(c2.stdout));
+
+    // D: worker exec 佇列 — 對內建 esh-worker 連發兩個 exec
+    // (esh-term 的 UI 有 busy flag 擋重入, 只有直接 postMessage 才測得到佇列本身)
+    const D = await new Promise((resolve) => {
+      const w = new Worker("/assets/esh/esh-worker.js", { type: "module" });
+      const results = {};
+      w.addEventListener("message", (ev) => {
+        const m = ev.data;
+        if(m.type === "ready") {
+          w.postMessage({ id: 1, type: "exec", cmdline: "X=slow; ls /nonexistent 2>/dev/null; echo X=$X-1" });
+          w.postMessage({ id: 2, type: "exec", cmdline: "X=fast; echo X=$X-2" });
+        }
+        if(m.type === "result") {
+          results[m.id] = m.stdout;
+          if(results[1] !== undefined && results[2] !== undefined) { w.terminate(); resolve(results); }
+        }
+      });
+    });
+    ok("[D] worker 佇列: exec1 保有自己的狀態", D[1].indexOf("X=slow-1") >= 0, JSON.stringify(D[1]));
+    ok("[D] worker 佇列: exec2 保有自己的狀態", D[2].indexOf("X=fast-2") >= 0, JSON.stringify(D[2]));
+
+    document.getElementById("summary").textContent = pass + " / " + total + " passed";
+    console.log("[async-test] " + pass + "/" + total);
+  </script>
+</body>
+</html>

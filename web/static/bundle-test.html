@@ -24,7 +24,9 @@
     fs.writeFileSync("/home/web/README.md", "# demo\nfind the needle here\n");
     fs.writeFileSync("/home/web/src/a.js", "console.log('needle');\n");
     fs.writeFileSync("/home/web/nums.txt", "10\n2\n33\n4\n");
-    sh.run("cd /home/web");
+    await sh.run("cd /home/web");
+    // 0.1.0: async 自訂指令
+    sh.registerCommand("delay", (argv) => new Promise((res) => setTimeout(() => res("async: " + argv.join(" ") + "\n"), 10)));
 
     const cases = [
       ["ls", "README.md\nnums.txt\nsrc"],
@@ -34,12 +36,13 @@
       ["i=0; while [ $i -lt 3 ]; do echo $i; i=$((i+1)); done", "0\n1\n2"],
       ["greet() { echo hi $1; }; greet bundle", "hi bundle"],
       ["echo x > /tmp/o.txt; cat /tmp/o.txt", "x"],
-      ["ls src | xargs -n 1 echo item", "item a.js"]
+      ["ls src | xargs -n 1 echo item", "item a.js"],
+      ["delay from-promise | cat", "async: from-promise"]
     ];
     let pass = 0;
     const div = document.getElementById("out");
-    cases.forEach(([cmd, want]) => {
-      const r = sh.run(cmd);
+    for(const [cmd, want] of cases) {
+      const r = await sh.run(cmd);
       const got = (r.stdout || "").replace(/\n+$/, "");
       const ok = got === want;
       if(ok) pass++;
@@ -49,7 +52,7 @@
       d.querySelector(".cmd").textContent = " $ " + cmd;
       d.querySelector(".out").textContent = ok ? got : "got: " + got + "\nwant: " + want + (r.stderr ? "\nerr: " + r.stderr : "");
       div.appendChild(d);
-    });
+    }
     document.getElementById("summary").textContent = pass + " / " + cases.length + " passed";
     console.log("[bundle-test] " + pass + "/" + cases.length);
     window.sh = sh;

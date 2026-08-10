@@ -99,7 +99,7 @@ function ReturnSig(code) { this.code = code || 0; }
 // ---------- word expansion ----------
 // 把 word 拆成 segments: {text, quoted, expansion}
 // 追蹤雙引號區域 (單引號 parser 已剝除), expansion 於此解析成值
-function wordSegments(word, ctx) {
+async function wordSegments(word, ctx) {
   const src = word.text;
   // bash-parser bug: 換行後的指令 Word 會殘留前一行的幽靈 expansion,
   // loc 為負數或指錯位置 — 只接受 loc 合法且該處確為 $ 或 ` 的 expansion
@@ -124,7 +124,7 @@ function wordSegments(word, ctx) {
     if(cur) segments.push({ text: cur, quoted: inDouble, expansion: false });
   }
 
-  exps.forEach((e) => {
+  for(const e of exps) {
     literal(src.slice(pos, e.loc.start));
     let v = "", list = null;
     if(e.type === "ParameterExpansion") {
@@ -138,21 +138,21 @@ function wordSegments(word, ctx) {
       else if(e.parameter === "#") v = String(ctx.positional.length);
       else v = ctx.vars[e.parameter] !== undefined ? String(ctx.vars[e.parameter]) : "";
     } else if(e.type === "CommandExpansion") {
-      const r = evalNode(e.commandAST, ctx, null);
+      const r = await evalNode(e.commandAST, ctx, null);
       v = (r.stdout || "").replace(/\n+$/, "");
     } else if(e.type === "ArithmeticExpansion") {
       v = String(evalArith(e.arithmeticAST, ctx));
     }
     segments.push({ text: v, quoted: inDouble, expansion: true, list });
     pos = e.loc.end + 1;
-  });
+  }
   literal(src.slice(pos));
   return segments;
 }
 
 // 單一字串 (redirect 目標、賦值右側): 不 field split、不 glob
-function expandString(word, ctx) {
-  const segs = wordSegments(word, ctx);
+async function expandString(word, ctx) {
+  const segs = await wordSegments(word, ctx);
   let t = segs.map((s) => s.text).join("");
   if(word.text.charAt(0) === "~" && (t === "~" || t.slice(0, 2) === "~/"))
     t = ctx.vars.HOME + t.slice(1);
@@ -160,8 +160,8 @@ function expandString(word, ctx) {
 }
 
 // argv 用: 未加引號的 expansion 結果做 field splitting, 之後逐欄 glob
-function expandWordToFields(word, ctx) {
-  const segs = wordSegments(word, ctx);
+async function expandWordToFields(word, ctx) {
+  const segs = await wordSegments(word, ctx);
   const fields = [];
   let cur = null;
   const ensure = () => { if(!cur) cur = { pattern: "", hasGlob: false }; };
@@ -362,7 +362,9 @@ const builtins = {
 
 // ---------- 自訂指令 ----------
 // 簽名同 builtin: (argv, stdin, ctx) → {stdout, stderr, code}
-// 寬鬆回傳: 字串視為 stdout(code 0), undefined 視為空輸出成功。
+// 寬鬆回傳: 字串視為 stdout(code 0), undefined 視為空輸出成功;
+// 可為 async function / 回傳 Promise (evaluator 為 async, 會等待;
+// reject 轉為 stderr + code 1)。
 // per-shell 註冊掛在 ctx.commands(經由 base.js 的 registerCommand);
 // 此處 globalCommands 為全域 registry — 同 realm 所有 shell 共用, 慎用。
 // 查找順序: shell function → ctx.commands → globalCommands → builtins。
@@ -385,10 +387,6 @@ export function registerCommand(name, fn) {
 function normalizeCmdResult(r) {
   if(typeof r === "string") return { stdout: r, stderr: "", code: 0 };
   if(!r) return { stdout: "", stderr: "", code: 0 };
-  if(typeof r.then === "function") {
-    r.catch(() => {}); // 吞掉 rejection, 避免 unhandled rejection 弄死宿主
-    return { stdout: "", stderr: "async 自訂指令不支援 (evaluator 為同步, 回傳 Promise 無法等待)", code: 1 };
-  }
   return {
     stdout: r.stdout === undefined ? "" : String(r.stdout),
     stderr: r.stderr === undefined ? "" : String(r.stderr),
@@ -396,13 +394,13 @@ function normalizeCmdResult(r) {
   };
 }
 
-function callBuiltin(name, argv, stdin, ctx) {
+async function callBuiltin(name, argv, stdin, ctx) {
   if(ctx.funcs[name]) return callFunction(ctx.funcs[name], argv, ctx, stdin);
   const custom = (ctx.commands && ctx.commands[name]) || globalCommands[name];
   const fn = custom || builtins[name];
   if(!fn) return { stdout: "", stderr: name + ": command not found", code: 127 };
   try {
-    const r = fn(argv, stdin, ctx);
+    const r = await fn(argv, stdin, ctx); // 自訂指令可回傳 Promise (async fn)
     return custom ? normalizeCmdResult(r) : r;
   }
   catch(e) {
@@ -411,7 +409,7 @@ function callBuiltin(name, argv, stdin, ctx) {
   }
 }
 
-builtins.xargs = (args, stdin, ctx) => {
+builtins.xargs = async (args, stdin, ctx) => {
   let n = 0, perLine = false, placeholder = null;
   let i = 0;
   for(; i < args.length; i++) {
@@ -436,15 +434,15 @@ builtins.xargs = (args, stdin, ctx) => {
   }
 
   let out = "", errs = [], worst = 0;
-  batches.forEach((batch) => {
+  for(const batch of batches) {
     let argv;
     if(placeholder) argv = base.map((a) => a.split(placeholder).join(batch[0]));
     else argv = base.concat(batch);
-    const r = callBuiltin(cmd, argv, null, ctx);
+    const r = await callBuiltin(cmd, argv, null, ctx);
     if(r.stdout) out += r.stdout + (r.stdout.charAt(r.stdout.length - 1) === "\n" ? "" : "\n");
     if(r.stderr) errs.push(r.stderr);
     if(r.code > worst) worst = r.code;
-  });
+  }
   return { stdout: out, stderr: errs.join("\n"), code: worst };
 };
 
@@ -486,43 +484,43 @@ function testCmd(args) {
 }
 
 // ---------- evaluator ----------
-function applyAssignments(list, ctx) {
-  list.forEach((a) => {
-    const s = expandString(a, ctx);
+async function applyAssignments(list, ctx) {
+  for(const a of list) {
+    const s = await expandString(a, ctx);
     const i = s.indexOf("=");
     ctx.vars[s.slice(0, i)] = s.slice(i + 1);
-  });
+  }
 }
 
-function evalCommand(node, ctx, stdin) {
+async function evalCommand(node, ctx, stdin) {
   const assignments = [], redirects = [];
   (node.prefix || []).concat(node.suffix || []).forEach((x) => {
     if(x.type === "Redirect") redirects.push(x);
     else if(x.type === "AssignmentWord") assignments.push(x);
   });
   if(!node.name) {
-    applyAssignments(assignments, ctx);
+    await applyAssignments(assignments, ctx);
     return { stdout: "", stderr: "", code: 0 };
   }
   // 暫時性賦值 (VAR=x cmd)
   const saved = {};
-  assignments.forEach((a) => {
-    const s = expandString(a, ctx);
+  for(const a of assignments) {
+    const s = await expandString(a, ctx);
     const i = s.indexOf("=");
     const k = s.slice(0, i);
     saved[k] = ctx.vars[k];
     ctx.vars[k] = s.slice(i + 1);
-  });
+  }
 
-  let argv = expandWordToFields(node.name, ctx);
-  (node.suffix || []).forEach((x) => {
-    if(x.type === "Word") argv = argv.concat(expandWordToFields(x, ctx));
-  });
+  let argv = await expandWordToFields(node.name, ctx);
+  for(const x of (node.suffix || [])) {
+    if(x.type === "Word") argv = argv.concat(await expandWordToFields(x, ctx));
+  }
 
   let input = stdin;
-  redirects.forEach((r) => {
+  for(const r of redirects) {
     if(r.op.text === "<") {
-      const target = expandString(r.file, ctx);
+      const target = await expandString(r.file, ctx);
       try { input = String(fs.readFileSync(target)); }
       catch(e) { input = ""; }
       if(heredocExpand.has(target))
@@ -531,19 +529,19 @@ function evalCommand(node, ctx, stdin) {
           return ctx.vars[k] !== undefined ? ctx.vars[k] : "";
         });
     }
-  });
+  }
 
-  let res = callBuiltin(argv[0], argv.slice(1), input, ctx);
+  let res = await callBuiltin(argv[0], argv.slice(1), input, ctx);
 
-  redirects.forEach((r) => {
-    const target = expandString(r.file, ctx);
+  for(const r of redirects) {
+    const target = await expandString(r.file, ctx);
     const isErr = r.numberIo && r.numberIo.text === "2";
     const content = isErr ? res.stderr : res.stdout;
     if(r.op.text === ">") { shell.ShellString(content).to(target); }
     else if(r.op.text === ">>") { shell.ShellString(content).toEnd(target); }
-    else return;
+    else continue;
     if(isErr) res.stderr = ""; else res.stdout = "";
-  });
+  }
 
   Object.keys(saved).forEach((k) => {
     if(saved[k] === undefined) delete ctx.vars[k];
@@ -552,12 +550,12 @@ function evalCommand(node, ctx, stdin) {
   return res;
 }
 
-function callFunction(body, argv, ctx, stdin) {
+async function callFunction(body, argv, ctx, stdin) {
   const saved = ctx.positional;
   ctx.positional = argv;
   ctx.scopes.push({});
   try {
-    return evalNode(body, ctx, stdin);
+    return await evalNode(body, ctx, stdin);
   } catch(e) {
     if(e instanceof ReturnSig) return { stdout: "", stderr: "", code: e.code };
     throw e;
@@ -592,57 +590,57 @@ function concatRes(a, b) {
   return { stdout: out + b.stdout, stderr: [a.stderr, b.stderr].filter(Boolean).join("\n"), code: b.code };
 }
 
-function evalNode(node, ctx, stdin) {
+async function evalNode(node, ctx, stdin) {
   switch(node.type) {
     case "Script":
     case "CompoundList": {
       let acc = { stdout: "", stderr: "", code: 0 };
-      (node.commands || []).forEach((c) => {
-        const r = evalNode(c, ctx, null);
+      for(const c of (node.commands || [])) {
+        const r = await evalNode(c, ctx, null);
         ctx.lastCode = r.code;
         acc = concatRes(acc, r);
-      });
+      }
       return acc;
     }
     case "LogicalExpression": {
-      const left = evalNode(node.left, ctx, null);
+      const left = await evalNode(node.left, ctx, null);
       ctx.lastCode = left.code;
       const runRight = node.op === "and" ? left.code === 0 : left.code !== 0;
       if(!runRight) return left;
-      const right = evalNode(node.right, ctx, null);
+      const right = await evalNode(node.right, ctx, null);
       ctx.lastCode = right.code;
       return concatRes(left, right);
     }
     case "Pipeline": {
       let cur = stdin, res = { stdout: "", stderr: "", code: 0 }, errs = [];
-      node.commands.forEach((c) => {
-        res = evalNode(c, ctx, cur);
+      for(const c of node.commands) {
+        res = await evalNode(c, ctx, cur);
         if(res.stderr) errs.push(res.stderr);
         cur = res.stdout;
-      });
+      }
       ctx.lastCode = res.code;
       return { stdout: res.stdout, stderr: errs.join("\n"), code: res.code };
     }
     case "Command":
       return evalCommand(node, ctx, stdin);
     case "If": {
-      const cond = evalNode(node.clause, ctx, null);
+      const cond = await evalNode(node.clause, ctx, null);
       ctx.lastCode = cond.code;
       let branch = { stdout: "", stderr: "", code: cond.code === 0 ? 0 : ctx.lastCode };
-      if(cond.code === 0) branch = evalNode(node.then, ctx, null);
-      else if(node.else) branch = evalNode(node.else, ctx, null);
+      if(cond.code === 0) branch = await evalNode(node.then, ctx, null);
+      else if(node.else) branch = await evalNode(node.else, ctx, null);
       else branch = { stdout: "", stderr: "", code: 0 };
       ctx.lastCode = branch.code;
       return concatRes({ stdout: cond.stdout, stderr: cond.stderr, code: 0 }, branch);
     }
     case "For": {
       let words = [];
-      (node.wordlist || []).forEach((w) => { words = words.concat(expandWordToFields(w, ctx)); });
+      for(const w of (node.wordlist || [])) words = words.concat(await expandWordToFields(w, ctx));
       let acc = { stdout: "", stderr: "", code: 0 };
       for(let i = 0; i < words.length; i++) {
         ctx.vars[node.name.text] = words[i];
         try {
-          const r = evalNode(node.do, ctx, null);
+          const r = await evalNode(node.do, ctx, null);
           ctx.lastCode = r.code;
           acc = concatRes(acc, r);
         } catch(e) {
@@ -659,12 +657,12 @@ function evalNode(node, ctx, stdin) {
       for(;;) {
         if(++iter > MAX_LOOP)
           return concatRes(acc, { stdout: "", stderr: "loop aborted: 超過 " + MAX_LOOP + " 次迭代", code: 1 });
-        const cond = evalNode(node.clause, ctx, null);
+        const cond = await evalNode(node.clause, ctx, null);
         ctx.lastCode = cond.code;
         const go = node.type === "While" ? cond.code === 0 : cond.code !== 0;
         if(!go) break;
         try {
-          const r = evalNode(node.do, ctx, null);
+          const r = await evalNode(node.do, ctx, null);
           ctx.lastCode = r.code;
           acc = concatRes(acc, r);
         } catch(e) {
@@ -676,13 +674,16 @@ function evalNode(node, ctx, stdin) {
       return acc;
     }
     case "Case": {
-      const subject = expandString(node.clause, ctx);
+      const subject = await expandString(node.clause, ctx);
       for(let i = 0; i < (node.cases || []).length; i++) {
         const item = node.cases[i];
-        const hit = (item.pattern || []).some((p) => globToRegExp(expandString(p, ctx)).test(subject));
+        let hit = false;
+        for(const p of (item.pattern || [])) {
+          if(globToRegExp(await expandString(p, ctx)).test(subject)) { hit = true; break; }
+        }
         if(hit) {
           if(!item.body) return { stdout: "", stderr: "", code: 0 };
-          const r = evalNode(item.body, ctx, null);
+          const r = await evalNode(item.body, ctx, null);
           ctx.lastCode = r.code;
           return r;
         }
@@ -785,10 +786,12 @@ function extractHeredocs(src, ctx) {
   return out.join("\n");
 }
 
-export function run(cmdline, ctx) {
+// 0.1.0 起為 async: 回傳 Promise<{stdout, stderr, code}>
+// (自訂指令因此可為 async — 見「自訂指令」節)
+export async function run(cmdline, ctx) {
   let ast;
   try { ast = parse(normalizeSemicolons(extractHeredocs(cmdline, ctx)), { mode: "posix" }); }
   catch(e) { return { stdout: "", stderr: "parse error: " + e.message, code: 2 }; }
-  try { return evalNode(ast, ctx, null); }
+  try { return await evalNode(ast, ctx, null); }
   catch(e) { return { stdout: "", stderr: "interp error: " + e.message, code: 1 }; }
 }

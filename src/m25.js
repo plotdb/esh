@@ -101,11 +101,11 @@ let passed = 0;
 const qs = new URLSearchParams(location.search);
 const from = Number(qs.get("from") || 0), to = Number(qs.get("to") || cases.length);
 const active = cases.slice(from, to);
-active.forEach(([cmdline, expect]) => {
+for(const [cmdline, expect] of active) {
   console.log("[m25-case] " + cmdline);
   seed();
   const ctx = createContext();
-  const r = run(cmdline, ctx);
+  const r = await run(cmdline, ctx);
   const got = (r.stdout || "").replace(/\n+$/, "");
   const ok = typeof expect === "function" ? !!expect(got) : got === expect;
   if(ok) passed++;
@@ -115,7 +115,7 @@ active.forEach(([cmdline, expect]) => {
   div.querySelector(".cmd").textContent = " $ " + cmdline;
   div.querySelector(".out").textContent = ok ? got : "got:  " + got + (r.stderr ? "\nstderr: " + r.stderr : "") + "\nwant: " + (typeof expect === "function" ? "(predicate)" : expect);
   casesDiv.appendChild(div);
-});
+}
 document.getElementById("summary").textContent = passed + " / " + active.length + " passed";
 console.log("[m25] " + passed + "/" + active.length);
 
@@ -127,11 +127,11 @@ const input = document.getElementById("input");
 const prompt = document.getElementById("prompt");
 function refreshPrompt() { prompt.textContent = String(shell.pwd()) + " $ "; }
 refreshPrompt();
-input.addEventListener("keydown", (ev) => {
+input.addEventListener("keydown", async (ev) => {
   if(ev.key !== "Enter") return;
   const cmdline = input.value;
   input.value = "";
-  const r = run(cmdline, replCtx);
+  const r = await run(cmdline, replCtx);
   const entry = document.createElement("div");
   entry.innerHTML = "<span class='cmd'></span><div class='out'></div><div class='err'></div>";
   entry.querySelector(".cmd").textContent = prompt.textContent + cmdline;

@@ -26,18 +26,21 @@ shell.cd("/home/web");
 
 const ctx = createContext();
 
+// run 為 async(0.1.0);以 promise chain 序列化, 確保多個 exec 不交錯共享狀態
+let queue = Promise.resolve();
 self.onmessage = (ev) => {
   const msg = ev.data;
-  if(msg.type === "exec") {
+  if(msg.type !== "exec") return;
+  queue = queue.then(async () => {
     let r;
-    try { r = run(msg.cmdline, ctx); }
+    try { r = await run(msg.cmdline, ctx); }
     catch(e) { r = { stdout: "", stderr: "internal: " + e.message, code: 1 }; }
     self.postMessage({
       id: msg.id, type: "result",
       stdout: r.stdout || "", stderr: r.stderr || "", code: r.code || 0,
       cwd: String(shell.pwd())
     });
-  }
+  });
 };
 
 self.postMessage({ type: "ready", cwd: String(shell.pwd()), persist });

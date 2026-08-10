@@ -83,20 +83,22 @@ html(lang="en")
         * 'sort -n nums.txt | head -n 2', '2\n4'
         * 'i=0; while [ $i -lt 3 ]; do echo $i; i=$((i+1)); done', '0\n1\n2'
         * 'greet() { echo hi $1; }; greet pug', 'hi pug'
+        * 'delay from-promise | cat', 'async: from-promise'
 
+      # sh.run 為 async (0.1.0) — LiveScript 無 await, 以 promise 鏈逐項跑
       run-tests = (sh) ->
         fs = esh.fs
         fs.mkdir-sync '/home/web/src', {+recursive}
         fs.write-file-sync '/home/web/README.md', '# demo\nfind the needle here\n'
         fs.write-file-sync '/home/web/src/a.js', 'console.log("needle");\n'
         fs.write-file-sync '/home/web/nums.txt', '10\n2\n33\n4\n'
-        sh.run 'cd /home/web'
+        # async 自訂指令展示: delay 過一個 tick 才回
+        sh.register-command 'delay', (argv) ->
+          new Promise (res) -> set-timeout (-> res 'async: ' + argv.join(' ') + '\n'), 10
         root = document.get-element-by-id 'cases'
         root.inner-HTML = ''
         passed = 0
-        for [cmd, want] in cases
-          r = sh.run cmd
-          got = (r.stdout or '').replace /\n+$/, ''
+        render = (cmd, want, got) ->
           ok = got is want
           passed += 1 if ok
           d = document.create-element 'div'
@@ -105,7 +107,16 @@ html(lang="en")
           d.query-selector '.cmd' .text-content = ' $ ' + cmd
           d.query-selector '.out' .text-content = if ok then got else 'got: ' + got + '\nwant: ' + want
           root.append-child d
-        document.get-element-by-id 'summary' .text-content = passed + ' / ' + cases.length + ' passed'
+        finish = ->
+          document.get-element-by-id 'summary' .text-content = passed + ' / ' + cases.length + ' passed'
+        run-next = (i) ->
+          if i >= cases.length => return finish!
+          [cmd, want] = cases[i]
+          sh.run cmd .then (r) ->
+            render cmd, want, (r.stdout or '').replace /\n+$/, ''
+            run-next i + 1
+        sh.run 'cd /home/web' .then -> run-next 0
+        .catch (e) -> document.get-element-by-id 'summary' .text-content = 'test error: ' + e.message
 
       test-sh = null
       document.get-element-by-id 'test-btn' .add-event-listener 'click', ->

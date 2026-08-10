@@ -46,11 +46,13 @@ function/return/local、break/continue(含層數)、export/unset、~ 展開
 - 自製:echo wc test/[ xargs(-n/-L/-I) true false export unset local env
 - 不支援:exec(無 child_process)、which(無 PATH 執行檔)
 
-## 自訂指令(0.0.2)
+## 自訂指令(0.0.2, async 自 0.1.0)
 
 - 簽名同 builtin:`(argv, stdin, ctx) → {stdout, stderr, code}`;
   寬鬆回傳:字串視為 stdout(code 0)、undefined 視為成功空輸出。
   自動參與 pipe/redirect/$( )(皆為字串傳遞)。
+- **可為 async**(0.1.0 起):回傳 Promise 會被等待, reject → stderr + code 1。
+  `sh.run()` 因此一律回 Promise(evaluator 全 async)。
 - per-shell(主要):`createShell({commands: {...}})` 或
   `sh.registerCommand(name, fn)` / `sh.registerCommand({name: fn, ...})`,
   掛在 ctx.commands, shell 間互不可見。
@@ -60,6 +62,8 @@ function/return/local、break/continue(含層數)、export/unset、~ 展開
 - worker/終端:function 過不了 postMessage — esh-term 要自訂指令得自備
   worker(createTerminal 的 opts.worker 縫已存在);
   worker 底座抽用(esh-worker-base)為未來項目。
+  worker 內 async 指令可 await postMessage 往返向主執行緒要資料/UI 互動
+  (0.0.x 時代需 SAB+Atomics+coi-sw 同步阻塞, 0.1.0 起不再需要)。
 
 ## fs
 
@@ -75,6 +79,10 @@ function/return/local、break/continue(含層數)、export/unset、~ 展開
 - /web/vitedev/terminal.html — worker+OPFS 實機(vite)
 - web/static/bundle-test.html — dist 成品 8/8(零 bundler)
 - / (index.pug) — 終端主畫面 + tests popup 5/5(npm start)
+- `npm test` — Node async-core 迴歸(並發 run 序列化/展開鏈/reject/
+  async×語法混合 21 測項;test/async-core.mjs, 零瀏覽器)
+- web/static/async-test.html — dist 成品時序測試(A 並發序列化/B 展開鏈/
+  C reject/D worker 佇列;時序機制要兩件事同時在飛才測得到, 故獨立成頁)
 - Node:`node --input-type=module -e "import('./src/node-entry.js')..."`
 
 ## 已知限制與注意

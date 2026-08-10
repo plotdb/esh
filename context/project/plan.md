@@ -147,6 +147,30 @@ alias 機關、execa stub 一併移除;base 的 ctx 縮為 { fs, parse }。
     dist/esh-term.{js,iife.js,css} + esh-worker.js,exports ./term ./worker
 - API 名同套件名:`esh(ctx)`。
 
+### async core(0.1.0,20260810 定案開工)
+
+動機:自訂指令(0.0.2 的 registerCommand)最自然的形態是 async
+(fetch/curl、IndexedDB、UI 互動如 ldcover.prompt),但 evaluator 全同步,
+目前只能明確報錯。方案評估:全面 async 化 vs generator 雙驅動
+(單 codebase 保 sync+async 兩 API)— 後者優雅但可讀性/改寫成本過高,
+且同步 API 沒有必須保留的場景(terminal 走 worker 協定本來就 async),
+定案 **core 全面 async 化**,breaking change 出 0.1.0。
+
+- API:`sh.run()` 一律回 Promise<{stdout, stderr, code}>;
+  自訂指令可回傳 Promise(await 後 normalize,reject → stderr + code 1)
+- 改動範圍:
+  - core.js:evalNode 鏈全 async(Pipeline/Logical/If/For/While/Until/
+    Case/Command/Subshell)、callBuiltin/callFunction、wordSegments
+    (CommandExpansion 遞迴 evalNode)→ expandString/expandWordToFields
+    連帶 async;xargs(內部再呼叫指令)連帶;builtins 本身維持同步簽名
+    (await 非 Promise 零成本), 回 Promise 亦可
+  - base.js:run 轉發 Promise;sanity check 不變
+  - shell.worker.js:onmessage handler await run
+  - 測試矩陣:m2/m25/bundle-test/index.pug tests popup 全改 await
+- 附帶紅利:exp/ 的 ask 示範可拆 SAB+Atomics+coi-sw
+  (async 指令直接 await postMessage 往返;exp 端另行處理)
+- 風險:漏 await(靠 m2 81 + m25 72 迴歸網抓)、效能(可忽略)
+
 ## 目前狀態
 
 - [x] StackBlitz jsh 能力盤點(2026-08-09)
@@ -165,8 +189,17 @@ alias 機關、execa stub 一併移除;base 的 ctx 縮為 { fs, parse }。
   見 logs/20260810-two-layer-bundle.md)
 - [x] 定名 @plotdb/esh、esh-term 併入主套件、repo 定形、README 英文化
   (見 logs/20260810-package-shape.md;poc-shelljs 已移除)
-- [ ] npm publish(build 後 publish;checklist 見 logs/20260810-package-shape.md)
+- [x] npm publish 0.0.1(fedep publish 攤平驗證於消費端無誤)
+- [x] 0.0.2 自訂指令 API registerCommand(per-shell + 全域;c5f5298)
+- [x] 0.1.0 async core(m2 80/81 等分、m25 72/72、bundle-test 9/9 含 async
+  測項、Node 16/16;worker exec 序列化;exp/ 驗證 async ask 指令
+  — SAB/Atomics/coi-sw 橋確認可拆)
 - [ ] M3 WASM PoC(依 plan 上方評估:優先 busybox,uutils 為 fallback)
+- [ ] backlog(peer review 0.1.0 發現, pre-existing 非回歸):
+  (1) break 丟出時 CompoundList 當輪已累積 stdout 被丟棄
+  (`for i in a b c; do echo $i; break; done` stdout 空);
+  (2) evalCommand 暫時性賦值(VAR=x cmd)restore 不在 finally,
+  Break/ReturnSig 穿過時不還原 — 修時順手搬進 finally
 
 ## 參考
 
