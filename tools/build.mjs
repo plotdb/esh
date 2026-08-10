@@ -32,21 +32,30 @@ const alias = {
 };
 
 const common = {
-  entryPoints: [r("../src/bundle-entry.js")],
   bundle: true,
   platform: "browser",
   alias,
   inject: [r("../src/global-inject.js")],
-  define: { "process.env.NODE_ENV": "\"production\"" },
+  define: { "process.env.NODE_ENV": "\"production\"", global: "globalThis" },
   logLevel: "info"
 };
 
+const engine = { ...common, entryPoints: [r("../src/bundle-entry.js")] };
+const termE = { ...common, entryPoints: [r("../src/term-entry.js")] };
+const workerE = { ...common, entryPoints: [r("../src/shell.worker.js")] };
+
 Promise.all([
-  esbuild.build({ ...common, format: "esm", outfile: r("../dist/esh.js") }),
-  esbuild.build({ ...common, format: "iife", globalName: "esh", outfile: r("../dist/esh.iife.js") })
+  esbuild.build({ ...engine, format: "esm", outfile: r("../dist/esh.js") }),
+  esbuild.build({ ...engine, format: "iife", globalName: "esh", outfile: r("../dist/esh.iife.js") }),
+  esbuild.build({ ...termE, format: "esm", outfile: r("../dist/esh-term.js") }),
+  esbuild.build({ ...termE, format: "iife", globalName: "eshTerm", outfile: r("../dist/esh-term.iife.js") }),
+  esbuild.build({ ...workerE, format: "esm", outfile: r("../dist/esh-worker.js") })
 ]).then(() => {
   mkdirSync(r("../web/static/assets/esh"), { recursive: true });
-  copyFileSync(r("../dist/esh.js"), r("../web/static/assets/esh/esh.js"));
-  copyFileSync(r("../dist/esh.iife.js"), r("../web/static/assets/esh/esh.iife.js"));
+  [
+    "esh.js", "esh.iife.js",
+    "esh-term.js", "esh-term.css", "esh-term.iife.js", "esh-term.iife.css",
+    "esh-worker.js"
+  ].forEach((f) => copyFileSync(r("../dist/" + f), r("../web/static/assets/esh/" + f)));
   console.log("done (dist/ + web/static/assets/esh/)");
 }).catch(() => process.exit(1));

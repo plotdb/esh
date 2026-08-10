@@ -3,6 +3,9 @@
 ## master
 
  - features:
+   - esh-term: 終端隨主套件分檔出貨(dist/esh-term.{js,iife.js,css} +
+     esh-worker.js), createTerminal(el, opts); vite 頁與 bundle 共用 src/term.js;
+     web/ demo(index.pug)改為終端主畫面 + tests popup dialog
    - 套件化: 定名 @plotdb/esh, esh/ 結構整理後拉至 repo 根目錄
      (src/tools/web;vite 測試頁移 web/dev/;dist 出 esm + iife 雙格式,
      web/ 走 fedev 慣例消費成品;poc-shelljs/ 保留為歷史參照)

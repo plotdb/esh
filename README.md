@@ -45,6 +45,20 @@ const sh = await createShell();
 // 沙箱: createShell({ fs: memfs 實例 }) — 注意需與 shell 同 fs, 見 src/base.js
 ```
 
+### 終端(esh-term, 隨主套件出貨的獨立檔案)
+
+```html
+<link rel="stylesheet" href="dist/esh-term.css">
+<script src="dist/esh-term.iife.js"></script>
+<script>
+  // dist/esh-worker.js 需與 esh-term 同目錄部署(或以 workerUrl 指定)
+  eshTerm.createTerminal(document.getElementById('term'));
+</script>
+```
+
+ESM: `import { createTerminal } from '@plotdb/esh/term'`。
+shell 跑在 Web Worker(esh-worker.js, 含完整引擎),/home 掛 OPFS 持久化。
+
 ### 進階:自組依賴(base 層)
 
 ```js
