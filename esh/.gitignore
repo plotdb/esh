@@ -1,3 +1,4 @@
 node_modules
 dist
 web/static/assets/esh
+web/.view
