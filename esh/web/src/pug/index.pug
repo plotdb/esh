@@ -1,0 +1,59 @@
+doctype html
+html(lang="en")
+  head
+    meta(charset="utf-8")
+    meta(name="viewport", content="width=device-width, initial-scale=1.0")
+    title @plotdb/esh — embeddable shell runtime
+    style(type="text/css"): :stylus
+      body
+        font-family monospace
+        margin 2rem
+        background #1e1e2e
+        color #cdd6f4
+      .case
+        margin .5rem 0
+        padding .4rem .7rem
+        background #313244
+        border-radius 6px
+      .cmd
+        color #89b4fa
+      .out
+        white-space pre-wrap
+      .pass
+        color #a6e3a1
+      .fail
+        color #f38ba8
+  body
+    h3 @plotdb/esh — embeddable shell runtime (window.esh, IIFE build)
+    #summary
+    #out
+    script(src="/assets/esh/esh.iife.js")
+    script: :lsc
+      esh.create-shell!.then (sh) ->
+        fs = esh.fs
+        fs.mkdir-sync '/home/web/src', {+recursive}
+        fs.write-file-sync '/home/web/README.md', '# demo\nfind the needle here\n'
+        fs.write-file-sync '/home/web/src/a.js', 'console.log("needle");\n'
+        fs.write-file-sync '/home/web/nums.txt', '10\n2\n33\n4\n'
+        sh.run 'cd /home/web'
+        cases =
+          * 'ls', 'README.md\nnums.txt\nsrc'
+          * 'cat README.md | grep needle', 'find the needle here'
+          * 'sort -n nums.txt | head -n 2', '2\n4'
+          * 'i=0; while [ $i -lt 3 ]; do echo $i; i=$((i+1)); done', '0\n1\n2'
+          * 'greet() { echo hi $1; }; greet pug', 'hi pug'
+        passed = 0
+        root = document.get-element-by-id 'out'
+        for [cmd, want] in cases
+          r = sh.run cmd
+          got = (r.stdout or '').replace /\n+$/, ''
+          ok = got is want
+          passed += 1 if ok
+          d = document.create-element 'div'
+          d.class-name = 'case'
+          d.inner-HTML = '<span class="' + (if ok then 'pass">✔' else 'fail">✘') + '</span> <span class="cmd"></span><div class="out"></div>'
+          d.query-selector '.cmd' .text-content = ' $ ' + cmd
+          d.query-selector '.out' .text-content = if ok then got else 'got: ' + got + '\nwant: ' + want
+          root.append-child d
+        document.get-element-by-id 'summary' .text-content = passed + ' / ' + cases.length + ' passed'
+        window.sh = sh
