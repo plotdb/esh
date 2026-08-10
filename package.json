@@ -1,7 +1,7 @@
 {
   "name": "@plotdb/esh",
-  "version": "0.3.0",
-  "description": "esh — embeddable shell runtime for JavaScript. Shell syntax + virtual fs, runs in browser (OPFS persistence), Node, and workers.",
+  "version": "0.3.1",
+  "description": "esh \u2014 embeddable shell runtime for JavaScript. Shell syntax + virtual fs, runs in browser (OPFS persistence), Node, and workers.",
   "type": "module",
   "exports": {
     ".": {
@@ -31,7 +31,7 @@
     "dev": "vite --port 5199",
     "start": "npx server -r web -o true",
     "test": "node test/async-core.mjs && node test/remote.mjs && node test/git.mjs && node tools/check-bundle.mjs",
-    "test:pages": "echo 'vite dev: /web/vitedev/m2.html /web/vitedev/m25.html; dist 靜態: web/static/bundle-test.html web/static/async-test.html' && exit 0"
+    "test:pages": "echo 'vite dev: /web/vitedev/m2.html /web/vitedev/m25.html; dist \u975c\u614b: web/static/bundle-test.html web/static/async-test.html' && exit 0"
   },
   "keywords": [
     "shell",
