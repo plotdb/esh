@@ -48394,10 +48394,12 @@ var esh = (() => {
   // src/bundle-entry.js
   var bundle_entry_exports = {};
   __export(bundle_entry_exports, {
+    connectShell: () => connectShell,
     createShell: () => createShell,
     esh: () => esh2,
     fs: () => fs_zen_shim_default,
-    registerCommand: () => registerCommand
+    registerCommand: () => registerCommand,
+    serveShell: () => serveShell
   });
   init_global_inject();
   init_fs_zen_shim();
@@ -49919,11 +49921,142 @@ var esh = (() => {
         Object.assign(state.commands, commandMap(name, fn2));
         return api;
       },
+      // io: promise 版內容傳輸子集, 與 connectShell 的 io 同簽名 —
+      // local/remote shell 對消費端 drop-in(0.2.0)。任意內容不經 shell
+      // parser, 一律走這裡;fs(node-style, sync/callback)仍在供進階使用。
+      // readFile: encoding 預設 'utf8' 回 string;null/'binary' 回 Uint8Array
+      // writeFile: content 收 string | Uint8Array;自動建父目錄
+      io: {
+        readFile: async (path, encoding) => {
+          if (encoding === void 0) encoding = "utf8";
+          if (encoding === null || encoding === "binary") {
+            return new Uint8Array(ctx.fs.readFileSync(path));
+          }
+          return String(ctx.fs.readFileSync(path, encoding));
+        },
+        writeFile: async (path, content) => {
+          const dir = path.slice(0, path.lastIndexOf("/"));
+          if (dir) ctx.fs.mkdirSync(dir, { recursive: true });
+          ctx.fs.writeFileSync(path, content);
+        }
+      },
+      cwd: () => String(ctx.shell.pwd()),
       context: state,
       createContext,
       fs: ctx.fs
     };
     return api;
+  }
+
+  // src/remote.js
+  init_global_inject();
+  function serveShell(sh, target, info2) {
+    let queue = Promise.resolve();
+    const enqueue = (job) => {
+      const p = queue.then(job);
+      queue = p.catch(() => {
+      });
+      return p;
+    };
+    const handler = (ev) => {
+      const msg = ev.data;
+      if (!msg || !msg.id) return;
+      if (msg.type === "hello") {
+        target.postMessage(Object.assign({ id: msg.id, type: "ready", cwd: sh.cwd() }, info2 || {}));
+        return;
+      }
+      if (msg.type === "exec") {
+        enqueue(async () => {
+          let r;
+          try {
+            r = await sh.run(msg.cmdline);
+          } catch (e) {
+            r = { stdout: "", stderr: "internal: " + e.message, code: 1 };
+          }
+          target.postMessage({
+            id: msg.id,
+            type: "result",
+            stdout: r.stdout || "",
+            stderr: r.stderr || "",
+            code: r.code || 0,
+            cwd: sh.cwd()
+          });
+        });
+        return;
+      }
+      if (msg.type === "fs") {
+        enqueue(async () => {
+          try {
+            if (!sh.io || typeof sh.io[msg.op] !== "function") throw new Error("\u4E0D\u652F\u63F4\u7684 fs op: " + msg.op);
+            const result = await sh.io[msg.op].apply(null, msg.args || []);
+            target.postMessage({ id: msg.id, type: "fs-result", result });
+          } catch (e) {
+            target.postMessage({ id: msg.id, type: "fs-result", error: e.message });
+          }
+        });
+      }
+    };
+    target.addEventListener("message", handler);
+    return { dispose: () => target.removeEventListener("message", handler) };
+  }
+  function connectShell(workerOrUrl, opts) {
+    opts = opts || {};
+    const worker = typeof workerOrUrl === "string" ? new Worker(workerOrUrl, { type: "module" }) : workerOrUrl;
+    const prefix = "c" + Math.random().toString(36).slice(2, 10) + "-";
+    let seq = 0;
+    const pending = {};
+    const handler = (ev) => {
+      const m = ev.data;
+      if (!m || !m.id || !pending[m.id]) return;
+      const res = pending[m.id];
+      delete pending[m.id];
+      res(m);
+    };
+    worker.addEventListener("message", handler);
+    const send = (msg) => new Promise((res) => {
+      msg.id = prefix + ++seq;
+      pending[msg.id] = res;
+      worker.postMessage(msg);
+    });
+    const unwrapFs = (m) => {
+      if (m.error !== void 0) throw new Error(m.error);
+      return m.result;
+    };
+    return new Promise((resolve4, reject) => {
+      const started = Date.now();
+      const timeout = opts.timeout || 15e3;
+      let timer = null;
+      const attempt = () => {
+        const id = prefix + ++seq;
+        pending[id] = (ready) => {
+          clearTimeout(timer);
+          const api = {
+            run: (cmdline) => send({ type: "exec", cmdline }).then((m) => {
+              api.cwd = m.cwd;
+              return { stdout: m.stdout, stderr: m.stderr, code: m.code, cwd: m.cwd };
+            }),
+            io: {
+              readFile: (path, encoding) => send({ type: "fs", op: "readFile", args: encoding === void 0 ? [path] : [path, encoding] }).then(unwrapFs),
+              writeFile: (path, content) => send({ type: "fs", op: "writeFile", args: [path, content] }).then(unwrapFs)
+            },
+            cwd: ready.cwd,
+            ready,
+            // 完整 ready 訊息 (含 serveShell info, 如 persist)
+            worker,
+            dispose: () => worker.removeEventListener("message", handler)
+          };
+          resolve4(api);
+        };
+        worker.postMessage({ id, type: "hello" });
+        if (Date.now() - started > timeout) {
+          worker.removeEventListener("message", handler);
+          reject(new Error("connectShell: \u63E1\u624B\u903E\u6642 (" + timeout + "ms)"));
+          return;
+        }
+        timer = setTimeout(attempt, 250);
+      };
+      attempt();
+    });
   }
 
   // src/bundle-entry.js

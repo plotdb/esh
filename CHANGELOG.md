@@ -1,5 +1,27 @@
 # Change Logs
 
+## v0.2.0
+
+ - features:
+   - serveShell(sh, target, info?) / connectShell(workerOrUrl):跨執行緒使用
+     shell 的標準協定(exec 線上格式沿用 0.1.0 worker, 既有用戶無感;
+     新增 {type:'fs'} 內容傳輸 op 與 {type:'hello'} 握手)。
+     transport-agnostic:target 只需 postMessage + addEventListener 形狀
+   - fs op 白名單僅 readFile / writeFile(control-plane 走 exec,
+     data-plane 內容不經 shell parser);writeFile 自動建父目錄;
+     binary:content 收 string | Uint8Array, readFile encoding 預設 utf8、
+     null/'binary' 回 Uint8Array;exec + fs 同一條 promise queue 序列化
+   - 多 client 支援:connectShell id 帶隨機前綴(不撞號、廣播靠 id 過濾),
+     hello 重試握手(serveShell 晚掛 — 如 OPFS 掛載中 — 亦可連上)
+   - base:sh.io(本地 promise 版 readFile/writeFile, 與 remote 同簽名,
+     消費端 local/remote drop-in)、sh.cwd()
+   - exports 新增 ./remote(零依賴);主 entry re-export
+ - dogfooding:shell.worker.js 改以 esh(ctx) + serveShell 實作;
+   term.js client 改用 connectShell(addEventListener 掛,
+   不搶 onmessage — 同一 worker 可並存使用方自己的協定)
+ - tests:test/remote.mjs(loopback 假 target,17 案例:晚掛握手/
+   多 client/並存/序列化/binary/dispose)
+
 ## v0.1.0
 
  - breaking:

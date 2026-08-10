@@ -11052,6 +11052,68 @@ var o = class {
   }
 };
 
+// src/remote.js
+init_global_inject();
+function connectShell(workerOrUrl, opts) {
+  opts = opts || {};
+  const worker = typeof workerOrUrl === "string" ? new Worker(workerOrUrl, { type: "module" }) : workerOrUrl;
+  const prefix = "c" + Math.random().toString(36).slice(2, 10) + "-";
+  let seq = 0;
+  const pending = {};
+  const handler = (ev) => {
+    const m = ev.data;
+    if (!m || !m.id || !pending[m.id]) return;
+    const res = pending[m.id];
+    delete pending[m.id];
+    res(m);
+  };
+  worker.addEventListener("message", handler);
+  const send = (msg) => new Promise((res) => {
+    msg.id = prefix + ++seq;
+    pending[msg.id] = res;
+    worker.postMessage(msg);
+  });
+  const unwrapFs = (m) => {
+    if (m.error !== void 0) throw new Error(m.error);
+    return m.result;
+  };
+  return new Promise((resolve, reject) => {
+    const started = Date.now();
+    const timeout = opts.timeout || 15e3;
+    let timer = null;
+    const attempt = () => {
+      const id = prefix + ++seq;
+      pending[id] = (ready) => {
+        clearTimeout(timer);
+        const api = {
+          run: (cmdline) => send({ type: "exec", cmdline }).then((m) => {
+            api.cwd = m.cwd;
+            return { stdout: m.stdout, stderr: m.stderr, code: m.code, cwd: m.cwd };
+          }),
+          io: {
+            readFile: (path, encoding) => send({ type: "fs", op: "readFile", args: encoding === void 0 ? [path] : [path, encoding] }).then(unwrapFs),
+            writeFile: (path, content) => send({ type: "fs", op: "writeFile", args: [path, content] }).then(unwrapFs)
+          },
+          cwd: ready.cwd,
+          ready,
+          // 完整 ready 訊息 (含 serveShell info, 如 persist)
+          worker,
+          dispose: () => worker.removeEventListener("message", handler)
+        };
+        resolve(api);
+      };
+      worker.postMessage({ id, type: "hello" });
+      if (Date.now() - started > timeout) {
+        worker.removeEventListener("message", handler);
+        reject(new Error("connectShell: \u63E1\u624B\u903E\u6642 (" + timeout + "ms)"));
+        return;
+      }
+      timer = setTimeout(attempt, 250);
+    };
+    attempt();
+  });
+}
+
 // src/term.js
 var SCRIPT_BASE = "";
 try {
@@ -11080,7 +11142,7 @@ function createTerminal(el2, opts) {
     const url = opts.workerUrl || new URL("esh-worker.js", SCRIPT_BASE).href;
     worker = new Worker(url, { type: "module" });
   }
-  let cwd2 = "~", buf = "", busy = true, msgId = 0, pending = "";
+  let cwd2 = "~", buf = "", busy = true, pending = "", sh = null;
   const history = [];
   let histIdx = -1, histStash = "";
   const home = opts.home || "/home/web";
@@ -11097,37 +11159,24 @@ function createTerminal(el2, opts) {
     if (!t) return;
     term.write(colorErr ? "\x1B[31m" + t + "\x1B[0m\r\n" : t + "\r\n");
   }
-  worker.onmessage = (ev) => {
-    const m = ev.data;
-    if (m.type === "ready") {
-      cwd2 = m.cwd;
-      busy = false;
-      (opts.banner || [
-        "esh \u2014 embeddable shell runtime (\u5168\u90E8\u8DD1\u5728\u4F60\u7684\u700F\u89BD\u5668\u88E1)",
-        "/home \u5132\u5B58: " + (m.persist || "?"),
-        ""
-      ]).forEach((l) => term.writeln(l));
-      prompt();
-      if (pending) {
-        const d = pending;
-        pending = "";
-        handleData(d);
-      }
-      return;
+  connectShell(worker).then((c) => {
+    sh = c;
+    cwd2 = c.cwd;
+    busy = false;
+    (opts.banner || [
+      "esh \u2014 embeddable shell runtime (\u5168\u90E8\u8DD1\u5728\u4F60\u7684\u700F\u89BD\u5668\u88E1)",
+      "/home \u5132\u5B58: " + (c.ready.persist || "?"),
+      ""
+    ]).forEach((l) => term.writeln(l));
+    prompt();
+    if (pending) {
+      const d = pending;
+      pending = "";
+      handleData(d);
     }
-    if (m.type === "result") {
-      writeBlock(m.stdout, false);
-      writeBlock(m.stderr, true);
-      cwd2 = m.cwd;
-      busy = false;
-      prompt();
-      if (pending) {
-        const d = pending;
-        pending = "";
-        handleData(d);
-      }
-    }
-  };
+  }).catch((e) => {
+    term.writeln("\x1B[31mshell \u9023\u7DDA\u5931\u6557: " + e.message + "\x1B[0m");
+  });
   function submit() {
     term.write("\r\n");
     const cmdline = buf;
@@ -11139,7 +11188,18 @@ function createTerminal(el2, opts) {
     }
     history.push(cmdline);
     busy = true;
-    worker.postMessage({ id: ++msgId, type: "exec", cmdline });
+    sh.run(cmdline).then((r) => {
+      writeBlock(r.stdout, false);
+      writeBlock(r.stderr, true);
+      cwd2 = r.cwd;
+      busy = false;
+      prompt();
+      if (pending) {
+        const d = pending;
+        pending = "";
+        handleData(d);
+      }
+    });
   }
   function setLine(s15) {
     term.write("\x1B[2K\r" + promptStr());

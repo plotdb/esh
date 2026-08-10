@@ -2775,13 +2775,13 @@ function withErrno(code, message) {
   return err2;
 }
 function rethrow(extra, path, dest) {
-  const ctx2 = typeof extra === "string" ? { syscall: extra } : extra;
+  const ctx = typeof extra === "string" ? { syscall: extra } : extra;
   if (path)
-    ctx2.path = path;
+    ctx.path = path;
   if (dest)
-    ctx2.dest = dest;
+    ctx.dest = dest;
   return function(e) {
-    Object.assign(e, ctx2);
+    Object.assign(e, ctx);
     setUVMessage(e);
     throw e;
   };
@@ -3061,12 +3061,12 @@ var init_error = __esm({
       path;
       dest;
       syscall;
-      constructor(errno, message, ctx2 = {}) {
+      constructor(errno, message, ctx = {}) {
         const code = Errno[errno];
         super(message || "");
         this.errno = errno;
         this.code = code;
-        Object.assign(this, omit(ctx2, "message"));
+        Object.assign(this, omit(ctx, "message"));
         if (!message)
           setUVMessage(this);
         Error.captureStackTrace?.(this, this.constructor);
@@ -3363,7 +3363,7 @@ function contextOf($) {
 }
 function createChildContext(parent, init2 = {}) {
   const { root = parent.root, pwd = parent.pwd, credentials = structuredClone(parent.credentials) } = init2;
-  const ctx2 = {
+  const ctx = {
     [kIsContext]: true,
     id: _nextId++,
     root,
@@ -3373,14 +3373,14 @@ function createChildContext(parent, init2 = {}) {
     parent,
     children: []
   };
-  Object.defineProperties(ctx2, {
+  Object.defineProperties(ctx, {
     id: { configurable: false, writable: false },
     credentials: { configurable: false, writable: false },
     descriptors: { configurable: false, writable: false },
     parent: { configurable: false, writable: false },
     children: { configurable: false, writable: false }
   });
-  return ctx2;
+  return ctx;
 }
 var kIsContext, defaultContext, _nextId;
 var init_contexts = __esm({
@@ -6505,16 +6505,16 @@ var init_fs = __esm({
         try {
           const index = new Index();
           const tx = __addDisposableResource(env_3, this.transaction(), true);
-          const queue2 = [["/", 0]];
+          const queue = [["/", 0]];
           const silence = canary(withErrno("EDEADLK"));
-          while (queue2.length) {
-            const [path, ino] = queue2.shift();
+          while (queue.length) {
+            const [path, ino] = queue.shift();
             const inode = new Inode(await tx.get(ino));
             index.set(path, inode);
             if (inode.mode & S_IFDIR) {
               const dir = decodeDirListing(await tx.get(inode.data) ?? _throw(withErrno("ENODATA")));
               for (const [name, id] of Object.entries(dir)) {
-                queue2.push([join(path, name), id]);
+                queue.push([join(path, name), id]);
               }
             }
           }
@@ -6534,16 +6534,16 @@ var init_fs = __esm({
         try {
           const index = new Index();
           const tx = __addDisposableResource(env_4, this.transaction(), false);
-          const queue2 = [["/", 0]];
+          const queue = [["/", 0]];
           const silence = canary(withErrno("EDEADLK"));
-          while (queue2.length) {
-            const [path, ino] = queue2.shift();
+          while (queue.length) {
+            const [path, ino] = queue.shift();
             const inode = new Inode(tx.getSync(ino));
             index.set(path, inode);
             if (inode.mode & S_IFDIR) {
               const dir = decodeDirListing(tx.getSync(inode.data) ?? _throw(withErrno("ENODATA")));
               for (const [name, id] of Object.entries(dir)) {
-                queue2.push([join(path, name), id]);
+                queue.push([join(path, name), id]);
               }
             }
           }
@@ -6968,10 +6968,10 @@ var init_fs = __esm({
           }
           const visitedDirectories = /* @__PURE__ */ new Set();
           let i = 0;
-          const queue2 = [["/", rootIno]];
-          while (queue2.length > 0) {
+          const queue = [["/", rootIno]];
+          while (queue.length > 0) {
             i++;
-            const [path, ino] = queue2.shift();
+            const [path, ino] = queue.shift();
             this._add(ino, path);
             const inodeData = await tx.get(ino);
             if (!inodeData) {
@@ -6994,7 +6994,7 @@ var init_fs = __esm({
             }
             const dirListing = decodeDirListing(dirData);
             for (const [entryName, childIno] of Object.entries(dirListing)) {
-              queue2.push([join(path, entryName), childIno]);
+              queue.push([join(path, entryName), childIno]);
             }
           }
           debug(`Added ${i} existing inode(s) from store`);
@@ -7032,10 +7032,10 @@ var init_fs = __esm({
           }
           const visitedDirectories = /* @__PURE__ */ new Set();
           let i = 0;
-          const queue2 = [["/", rootIno]];
-          while (queue2.length > 0) {
+          const queue = [["/", rootIno]];
+          while (queue.length > 0) {
             i++;
-            const [path, ino] = queue2.shift();
+            const [path, ino] = queue.shift();
             this._add(ino, path);
             const inodeData = tx.getSync(ino);
             if (!inodeData) {
@@ -7058,7 +7058,7 @@ var init_fs = __esm({
             }
             const dirListing = decodeDirListing(dirData);
             for (const [entryName, childIno] of Object.entries(dirListing)) {
-              queue2.push([join(path, entryName), childIno]);
+              queue.push([join(path, entryName), childIno]);
             }
           }
           debug(`Added ${i} existing inode(s) from store`);
@@ -9137,11 +9137,11 @@ function umount(mountPoint) {
   mounts.delete(mountPoint);
   notice("Unmounted " + mountPoint);
 }
-function resolveMount(path, ctx2, extra) {
-  const { root } = contextOf(ctx2);
+function resolveMount(path, ctx, extra) {
+  const { root } = contextOf(ctx);
   const _exceptionContext = { path, ...extra };
   path = normalizePath(join(root, path), true);
-  path = resolve.call(ctx2, path);
+  path = resolve.call(ctx, path);
   const sortedMounts = [...mounts].sort((a, b) => a[0].length > b[0].length ? -1 : 1);
   for (const [mountPoint, fs2] of sortedMounts) {
     if (!_isParentOf(mountPoint, path))
@@ -16881,7 +16881,7 @@ var require_operators = __commonJS({
           [options === null || options === void 0 ? void 0 : options.signal].filter(Boolean2)
         );
         const stream = this;
-        const queue2 = [];
+        const queue = [];
         const signalOpt = {
           signal
         };
@@ -16898,7 +16898,7 @@ var require_operators = __commonJS({
           maybeResume();
         }
         function maybeResume() {
-          if (resume && !done && cnt < concurrency && queue2.length < highWaterMark) {
+          if (resume && !done && cnt < concurrency && queue.length < highWaterMark) {
             resume();
             resume = null;
           }
@@ -16923,22 +16923,22 @@ var require_operators = __commonJS({
               }
               cnt += 1;
               PromisePrototypeThen(val, afterItemProcessed, onCatch);
-              queue2.push(val);
+              queue.push(val);
               if (next) {
                 next();
                 next = null;
               }
-              if (!done && (queue2.length >= highWaterMark || cnt >= concurrency)) {
+              if (!done && (queue.length >= highWaterMark || cnt >= concurrency)) {
                 await new Promise2((resolve4) => {
                   resume = resolve4;
                 });
               }
             }
-            queue2.push(kEof);
+            queue.push(kEof);
           } catch (err2) {
             const val = PromiseReject(err2);
             PromisePrototypeThen(val, afterItemProcessed, onCatch);
-            queue2.push(val);
+            queue.push(val);
           } finally {
             done = true;
             if (next) {
@@ -16950,8 +16950,8 @@ var require_operators = __commonJS({
         pump();
         try {
           while (true) {
-            while (queue2.length > 0) {
-              const val = await queue2[0];
+            while (queue.length > 0) {
+              const val = await queue[0];
               if (val === kEof) {
                 return;
               }
@@ -16961,7 +16961,7 @@ var require_operators = __commonJS({
               if (val !== kEmpty) {
                 yield val;
               }
-              queue2.shift();
+              queue.shift();
               maybeResume();
             }
             await new Promise2((resolve4) => {
@@ -22096,21 +22096,21 @@ function bindContext(init2 = {}) {
   const $ = contextOf(this);
   if (!statSync.call(this, $.root).isDirectory())
     throw UV("ENOTDIR", { syscall: "chroot", path: $.root });
-  const ctx2 = createChildContext($, init2);
-  const bound = Object.assign(ctx2, {
+  const ctx = createChildContext($, init2);
+  const bound = Object.assign(ctx, {
     fs: {
-      ...bindFunctions(node_exports, ctx2),
-      promises: bindFunctions(promises_exports, ctx2),
-      xattr: bindFunctions(xattr_exports, ctx2)
+      ...bindFunctions(node_exports, ctx),
+      promises: bindFunctions(promises_exports, ctx),
+      xattr: bindFunctions(xattr_exports, ctx)
     },
-    path: bindFunctions(path_exports, ctx2),
+    path: bindFunctions(path_exports, ctx),
     bind: (init3) => {
-      const child = bindContext.call(ctx2, init3);
-      ctx2.children.push(child);
+      const child = bindContext.call(ctx, init3);
+      ctx.children.push(child);
       return child;
     }
   });
-  boundContexts.set(ctx2.id, bound);
+  boundContexts.set(ctx.id, bound);
   return bound;
 }
 var boundContexts;
@@ -26336,23 +26336,23 @@ var require_util2 = __commonJS({
       return debugs[set4];
     };
     function inspect(obj, opts) {
-      var ctx2 = {
+      var ctx = {
         seen: [],
         stylize: stylizeNoColor
       };
-      if (arguments.length >= 3) ctx2.depth = arguments[2];
-      if (arguments.length >= 4) ctx2.colors = arguments[3];
+      if (arguments.length >= 3) ctx.depth = arguments[2];
+      if (arguments.length >= 4) ctx.colors = arguments[3];
       if (isBoolean(opts)) {
-        ctx2.showHidden = opts;
+        ctx.showHidden = opts;
       } else if (opts) {
-        exports2._extend(ctx2, opts);
+        exports2._extend(ctx, opts);
       }
-      if (isUndefined(ctx2.showHidden)) ctx2.showHidden = false;
-      if (isUndefined(ctx2.depth)) ctx2.depth = 2;
-      if (isUndefined(ctx2.colors)) ctx2.colors = false;
-      if (isUndefined(ctx2.customInspect)) ctx2.customInspect = true;
-      if (ctx2.colors) ctx2.stylize = stylizeWithColor;
-      return formatValue(ctx2, obj, ctx2.depth);
+      if (isUndefined(ctx.showHidden)) ctx.showHidden = false;
+      if (isUndefined(ctx.depth)) ctx.depth = 2;
+      if (isUndefined(ctx.colors)) ctx.colors = false;
+      if (isUndefined(ctx.customInspect)) ctx.customInspect = true;
+      if (ctx.colors) ctx.stylize = stylizeWithColor;
+      return formatValue(ctx, obj, ctx.depth);
     }
     exports2.inspect = inspect;
     inspect.colors = {
@@ -26399,23 +26399,23 @@ var require_util2 = __commonJS({
       });
       return hash;
     }
-    function formatValue(ctx2, value, recurseTimes) {
-      if (ctx2.customInspect && value && isFunction(value.inspect) && // Filter out the util module, it's inspect function is special
+    function formatValue(ctx, value, recurseTimes) {
+      if (ctx.customInspect && value && isFunction(value.inspect) && // Filter out the util module, it's inspect function is special
       value.inspect !== exports2.inspect && // Also filter out any prototype objects using the circular check.
       !(value.constructor && value.constructor.prototype === value)) {
-        var ret = value.inspect(recurseTimes, ctx2);
+        var ret = value.inspect(recurseTimes, ctx);
         if (!isString(ret)) {
-          ret = formatValue(ctx2, ret, recurseTimes);
+          ret = formatValue(ctx, ret, recurseTimes);
         }
         return ret;
       }
-      var primitive = formatPrimitive(ctx2, value);
+      var primitive = formatPrimitive(ctx, value);
       if (primitive) {
         return primitive;
       }
       var keys = Object.keys(value);
       var visibleKeys = arrayToHash(keys);
-      if (ctx2.showHidden) {
+      if (ctx.showHidden) {
         keys = Object.getOwnPropertyNames(value);
       }
       if (isError(value) && (keys.indexOf("message") >= 0 || keys.indexOf("description") >= 0)) {
@@ -26424,13 +26424,13 @@ var require_util2 = __commonJS({
       if (keys.length === 0) {
         if (isFunction(value)) {
           var name = value.name ? ": " + value.name : "";
-          return ctx2.stylize("[Function" + name + "]", "special");
+          return ctx.stylize("[Function" + name + "]", "special");
         }
         if (isRegExp(value)) {
-          return ctx2.stylize(RegExp.prototype.toString.call(value), "regexp");
+          return ctx.stylize(RegExp.prototype.toString.call(value), "regexp");
         }
         if (isDate(value)) {
-          return ctx2.stylize(Date.prototype.toString.call(value), "date");
+          return ctx.stylize(Date.prototype.toString.call(value), "date");
         }
         if (isError(value)) {
           return formatError(value);
@@ -26459,46 +26459,46 @@ var require_util2 = __commonJS({
       }
       if (recurseTimes < 0) {
         if (isRegExp(value)) {
-          return ctx2.stylize(RegExp.prototype.toString.call(value), "regexp");
+          return ctx.stylize(RegExp.prototype.toString.call(value), "regexp");
         } else {
-          return ctx2.stylize("[Object]", "special");
+          return ctx.stylize("[Object]", "special");
         }
       }
-      ctx2.seen.push(value);
+      ctx.seen.push(value);
       var output2;
       if (array2) {
-        output2 = formatArray(ctx2, value, recurseTimes, visibleKeys, keys);
+        output2 = formatArray(ctx, value, recurseTimes, visibleKeys, keys);
       } else {
         output2 = keys.map(function(key) {
-          return formatProperty(ctx2, value, recurseTimes, visibleKeys, key, array2);
+          return formatProperty(ctx, value, recurseTimes, visibleKeys, key, array2);
         });
       }
-      ctx2.seen.pop();
+      ctx.seen.pop();
       return reduceToSingleString(output2, base, braces);
     }
-    function formatPrimitive(ctx2, value) {
+    function formatPrimitive(ctx, value) {
       if (isUndefined(value))
-        return ctx2.stylize("undefined", "undefined");
+        return ctx.stylize("undefined", "undefined");
       if (isString(value)) {
         var simple = "'" + JSON.stringify(value).replace(/^"|"$/g, "").replace(/'/g, "\\'").replace(/\\"/g, '"') + "'";
-        return ctx2.stylize(simple, "string");
+        return ctx.stylize(simple, "string");
       }
       if (isNumber(value))
-        return ctx2.stylize("" + value, "number");
+        return ctx.stylize("" + value, "number");
       if (isBoolean(value))
-        return ctx2.stylize("" + value, "boolean");
+        return ctx.stylize("" + value, "boolean");
       if (isNull(value))
-        return ctx2.stylize("null", "null");
+        return ctx.stylize("null", "null");
     }
     function formatError(value) {
       return "[" + Error.prototype.toString.call(value) + "]";
     }
-    function formatArray(ctx2, value, recurseTimes, visibleKeys, keys) {
+    function formatArray(ctx, value, recurseTimes, visibleKeys, keys) {
       var output2 = [];
       for (var i = 0, l = value.length; i < l; ++i) {
         if (hasOwnProperty(value, String(i))) {
           output2.push(formatProperty(
-            ctx2,
+            ctx,
             value,
             recurseTimes,
             visibleKeys,
@@ -26512,7 +26512,7 @@ var require_util2 = __commonJS({
       keys.forEach(function(key) {
         if (!key.match(/^\d+$/)) {
           output2.push(formatProperty(
-            ctx2,
+            ctx,
             value,
             recurseTimes,
             visibleKeys,
@@ -26523,29 +26523,29 @@ var require_util2 = __commonJS({
       });
       return output2;
     }
-    function formatProperty(ctx2, value, recurseTimes, visibleKeys, key, array2) {
+    function formatProperty(ctx, value, recurseTimes, visibleKeys, key, array2) {
       var name, str, desc;
       desc = Object.getOwnPropertyDescriptor(value, key) || { value: value[key] };
       if (desc.get) {
         if (desc.set) {
-          str = ctx2.stylize("[Getter/Setter]", "special");
+          str = ctx.stylize("[Getter/Setter]", "special");
         } else {
-          str = ctx2.stylize("[Getter]", "special");
+          str = ctx.stylize("[Getter]", "special");
         }
       } else {
         if (desc.set) {
-          str = ctx2.stylize("[Setter]", "special");
+          str = ctx.stylize("[Setter]", "special");
         }
       }
       if (!hasOwnProperty(visibleKeys, key)) {
         name = "[" + key + "]";
       }
       if (!str) {
-        if (ctx2.seen.indexOf(desc.value) < 0) {
+        if (ctx.seen.indexOf(desc.value) < 0) {
           if (isNull(recurseTimes)) {
-            str = formatValue(ctx2, desc.value, null);
+            str = formatValue(ctx, desc.value, null);
           } else {
-            str = formatValue(ctx2, desc.value, recurseTimes - 1);
+            str = formatValue(ctx, desc.value, recurseTimes - 1);
           }
           if (str.indexOf("\n") > -1) {
             if (array2) {
@@ -26559,7 +26559,7 @@ var require_util2 = __commonJS({
             }
           }
         } else {
-          str = ctx2.stylize("[Circular]", "special");
+          str = ctx.stylize("[Circular]", "special");
         }
       }
       if (isUndefined(name)) {
@@ -26569,10 +26569,10 @@ var require_util2 = __commonJS({
         name = JSON.stringify("" + key);
         if (name.match(/^"([a-zA-Z_][a-zA-Z_0-9]*)"$/)) {
           name = name.slice(1, -1);
-          name = ctx2.stylize(name, "name");
+          name = ctx.stylize(name, "name");
         } else {
           name = name.replace(/'/g, "\\'").replace(/\\"/g, '"').replace(/(^"|"$)/g, "'");
-          name = ctx2.stylize(name, "string");
+          name = ctx.stylize(name, "string");
         }
       }
       return name + ": " + str;
@@ -27395,15 +27395,15 @@ var require_expand = __commonJS({
     var fill = require_fill_range();
     var stringify = require_stringify();
     var utils = require_utils2();
-    var append = (queue2 = "", stash = "", enclose = false) => {
+    var append = (queue = "", stash = "", enclose = false) => {
       const result = [];
-      queue2 = [].concat(queue2);
+      queue = [].concat(queue);
       stash = [].concat(stash);
-      if (!stash.length) return queue2;
-      if (!queue2.length) {
+      if (!stash.length) return queue;
+      if (!queue.length) {
         return enclose ? utils.flatten(stash).map((ele) => `{${ele}}`) : stash;
       }
-      for (const item of queue2) {
+      for (const item of queue) {
         if (Array.isArray(item)) {
           for (const value of item) {
             result.push(append(value, stash, enclose));
@@ -27449,32 +27449,32 @@ var require_expand = __commonJS({
           return;
         }
         const enclose = utils.encloseBrace(node);
-        let queue2 = node.queue;
+        let queue = node.queue;
         let block = node;
         while (block.type !== "brace" && block.type !== "root" && block.parent) {
           block = block.parent;
-          queue2 = block.queue;
+          queue = block.queue;
         }
         for (let i = 0; i < node.nodes.length; i++) {
           const child = node.nodes[i];
           if (child.type === "comma" && node.type === "brace") {
-            if (i === 1) queue2.push("");
-            queue2.push("");
+            if (i === 1) queue.push("");
+            queue.push("");
             continue;
           }
           if (child.type === "close") {
-            q.push(append(q.pop(), queue2, enclose));
+            q.push(append(q.pop(), queue, enclose));
             continue;
           }
           if (child.value && child.type !== "open") {
-            queue2.push(append(queue2.pop(), child.value));
+            queue.push(append(queue.pop(), child.value));
             continue;
           }
           if (child.nodes) {
             walk(child, node);
           }
         }
-        return queue2;
+        return queue;
       };
       return utils.flatten(walk(ast));
     };
@@ -33442,13 +33442,13 @@ var require_queue = __commonJS({
           cb(null, res);
         }, cb);
       }
-      var queue2 = fastqueue(context, asyncWrapper, _concurrency);
-      var pushCb = queue2.push;
-      var unshiftCb = queue2.unshift;
-      queue2.push = push;
-      queue2.unshift = unshift;
-      queue2.drained = drained;
-      return queue2;
+      var queue = fastqueue(context, asyncWrapper, _concurrency);
+      var pushCb = queue.push;
+      var unshiftCb = queue.unshift;
+      queue.push = push;
+      queue.unshift = unshift;
+      queue.drained = drained;
+      return queue;
       function push(value) {
         var p = new Promise(function(resolve4, reject) {
           pushCb(value, function(err2, result) {
@@ -33478,14 +33478,14 @@ var require_queue = __commonJS({
       function drained() {
         var p = new Promise(function(resolve4) {
           process.nextTick(function() {
-            if (queue2.idle()) {
+            if (queue.idle()) {
               resolve4();
             } else {
-              var previousDrain = queue2.drain;
-              queue2.drain = function() {
+              var previousDrain = queue.drain;
+              queue.drain = function() {
                 if (typeof previousDrain === "function") previousDrain();
                 resolve4();
-                queue2.drain = previousDrain;
+                queue.drain = previousDrain;
               };
             }
           });
@@ -34702,9 +34702,9 @@ var require_common3 = __commonJS({
     var os = (init_os_shim(), __toCommonJS(os_shim_exports));
     var fs2 = (init_fs_zen_shim(), __toCommonJS(fs_zen_shim_exports));
     var glob3 = require_out4();
-    var shell4 = {};
-    exports2.shell = shell4;
-    var shellMethods = Object.create(shell4);
+    var shell3 = {};
+    exports2.shell = shell3;
+    var shellMethods = Object.create(shell3);
     exports2.extend = Object.assign;
     var isElectron = Boolean(process.versions.electron);
     var DEFAULT_CONFIG = {
@@ -35072,14 +35072,14 @@ var require_common3 = __commonJS({
         }
       });
       wrapOptions = Object.assign({}, DEFAULT_WRAP_OPTIONS, wrapOptions);
-      if (shell4.hasOwnProperty(name)) {
+      if (shell3.hasOwnProperty(name)) {
         throw new Error("Command `" + name + "` already exists");
       }
       if (wrapOptions.pipeOnly) {
         wrapOptions.canReceivePipe = true;
         shellMethods[name] = wrap2(name, implementation, wrapOptions);
       } else {
-        shell4[name] = wrap2(name, implementation, wrapOptions);
+        shell3[name] = wrap2(name, implementation, wrapOptions);
       }
       if (wrapOptions.canReceivePipe) {
         pipeMethods.push(name);
@@ -38062,7 +38062,7 @@ var require_map_iterable = __commonJS({
       let idx = 0;
       const init2 = options.init || initDefault;
       const callback = options.callback || options;
-      const ctx2 = init2(data);
+      const ctx = init2(data);
       const dataIterator = data[Symbol.iterator]();
       return {
         [Symbol.iterator]() {
@@ -38071,7 +38071,7 @@ var require_map_iterable = __commonJS({
         next() {
           const item = dataIterator.next();
           if (!item.done) {
-            item.value = callback(item.value, idx++, ctx2);
+            item.value = callback(item.value, idx++, ctx);
           }
           return item;
         }
@@ -47099,15 +47099,15 @@ var require_assignment_word = __commonJS({
     var map = require_map_iterable();
     var isValidName = require_is_valid_name();
     module2.exports = function assignmentWord() {
-      return map((tk, idx, ctx2) => {
+      return map((tk, idx, ctx) => {
         if (tk._.maybeStartOfSimpleCommand) {
-          ctx2.commandPrefixNotAllowed = false;
+          ctx.commandPrefixNotAllowed = false;
         }
-        if (!ctx2.commandPrefixNotAllowed && tk.is("WORD") && tk.value.indexOf("=") > 0 && // left part must be a valid name
+        if (!ctx.commandPrefixNotAllowed && tk.is("WORD") && tk.value.indexOf("=") > 0 && // left part must be a valid name
         isValidName(tk.value.slice(0, tk.value.indexOf("=")))) {
           return tk.changeTokenType("ASSIGNMENT_WORD", tk.value);
         }
-        ctx2.commandPrefixNotAllowed = true;
+        ctx.commandPrefixNotAllowed = true;
         return tk;
       });
     };
@@ -48398,8 +48398,10 @@ init_global_inject();
 init_process_shim();
 
 // src/shell.worker.js
-var import_shelljs2 = __toESM(require_shell(), 1);
+var import_shelljs = __toESM(require_shell(), 1);
 init_fs_zen_shim();
+var import_bash_parser = __toESM(require_src(), 1);
+var import_fast_glob = __toESM(require_out4(), 1);
 init_dist4();
 
 // node_modules/@zenfs/dom/dist/index.js
@@ -48883,12 +48885,8 @@ var XMLFS = class extends Sync(FileSystem) {
   }
 };
 
-// src/interp.js
+// src/base.js
 init_global_inject();
-var import_bash_parser = __toESM(require_src(), 1);
-var import_shelljs = __toESM(require_shell(), 1);
-init_fs_zen_shim();
-var import_fast_glob = __toESM(require_out4(), 1);
 
 // src/core.js
 init_global_inject();
@@ -48896,11 +48894,11 @@ var parse3;
 var shell;
 var fs;
 var fg;
-function initDeps(ctx2) {
-  parse3 = ctx2.parse;
-  shell = ctx2.shell;
-  fs = ctx2.fs;
-  fg = ctx2.fg;
+function initDeps(ctx) {
+  parse3 = ctx.parse;
+  shell = ctx.shell;
+  fs = ctx.fs;
+  fg = ctx.fg;
 }
 function createContext() {
   return {
@@ -48912,18 +48910,18 @@ function createContext() {
     lastCode: 0
   };
 }
-function evalArith(n, ctx2) {
+function evalArith(n, ctx) {
   switch (n.type) {
     case "NumericLiteral":
       return n.value;
     case "Identifier": {
-      const v = Number(ctx2.vars[n.name]);
+      const v = Number(ctx.vars[n.name]);
       return isNaN(v) ? 0 : Math.trunc(v);
     }
     case "ParenthesizedExpression":
-      return evalArith(n.expression, ctx2);
+      return evalArith(n.expression, ctx);
     case "UnaryExpression": {
-      const v = evalArith(n.argument, ctx2);
+      const v = evalArith(n.argument, ctx);
       if (n.operator === "-") return -v;
       if (n.operator === "+") return v;
       if (n.operator === "!") return v === 0 ? 1 : 0;
@@ -48931,7 +48929,7 @@ function evalArith(n, ctx2) {
       break;
     }
     case "BinaryExpression": {
-      const l = evalArith(n.left, ctx2), r = evalArith(n.right, ctx2);
+      const l = evalArith(n.left, ctx), r = evalArith(n.right, ctx);
       switch (n.operator) {
         case "+":
           return l + r;
@@ -48971,29 +48969,29 @@ function evalArith(n, ctx2) {
       break;
     }
     case "LogicalExpression": {
-      const l = evalArith(n.left, ctx2);
-      if (n.operator === "&&") return l !== 0 && evalArith(n.right, ctx2) !== 0 ? 1 : 0;
-      if (n.operator === "||") return l !== 0 || evalArith(n.right, ctx2) !== 0 ? 1 : 0;
+      const l = evalArith(n.left, ctx);
+      if (n.operator === "&&") return l !== 0 && evalArith(n.right, ctx) !== 0 ? 1 : 0;
+      if (n.operator === "||") return l !== 0 || evalArith(n.right, ctx) !== 0 ? 1 : 0;
       break;
     }
     case "ConditionalExpression":
-      return evalArith(n.test, ctx2) !== 0 ? evalArith(n.consequent, ctx2) : evalArith(n.alternate, ctx2);
+      return evalArith(n.test, ctx) !== 0 ? evalArith(n.consequent, ctx) : evalArith(n.alternate, ctx);
     case "AssignmentExpression": {
       const name = n.left.name;
-      let v = evalArith(n.right, ctx2);
+      let v = evalArith(n.right, ctx);
       if (n.operator !== "=") {
-        const cur = Number(ctx2.vars[name]) || 0;
+        const cur = Number(ctx.vars[name]) || 0;
         const op = n.operator.slice(0, -1);
         v = op === "+" ? cur + v : op === "-" ? cur - v : op === "*" ? cur * v : op === "/" ? Math.trunc(cur / v) : op === "%" ? cur % v : v;
       }
-      ctx2.vars[name] = String(v);
+      ctx.vars[name] = String(v);
       return v;
     }
     case "UpdateExpression": {
       const name = n.argument.name;
-      const cur = Number(ctx2.vars[name]) || 0;
+      const cur = Number(ctx.vars[name]) || 0;
       const nv = n.operator === "++" ? cur + 1 : cur - 1;
-      ctx2.vars[name] = String(nv);
+      ctx.vars[name] = String(nv);
       return n.prefix ? nv : cur;
     }
   }
@@ -49008,7 +49006,7 @@ function ContinueSig(n) {
 function ReturnSig(code) {
   this.code = code || 0;
 }
-async function wordSegments(word, ctx2) {
+async function wordSegments(word, ctx) {
   const src = word.text;
   const exps = (word.expansion || []).filter(
     (e) => e.loc && e.loc.start >= 0 && e.loc.end >= e.loc.start && e.loc.end < src.length && (src.charAt(e.loc.start) === "$" || src.charAt(e.loc.start) === "`")
@@ -49034,19 +49032,19 @@ async function wordSegments(word, ctx2) {
     literal(src.slice(pos, e.loc.start));
     let v = "", list2 = null;
     if (e.type === "ParameterExpansion") {
-      if (e.parameter === "?") v = String(ctx2.lastCode);
+      if (e.parameter === "?") v = String(ctx.lastCode);
       else if (e.parameter === "@" || e.parameter === "*") {
-        v = ctx2.positional.join(" ");
-        if (inDouble && e.parameter === "@") list2 = ctx2.positional.slice();
+        v = ctx.positional.join(" ");
+        if (inDouble && e.parameter === "@") list2 = ctx.positional.slice();
       } else if (e.kind === "positional" || /^\d+$/.test(String(e.parameter)))
-        v = ctx2.positional[Number(e.parameter) - 1] !== void 0 ? ctx2.positional[Number(e.parameter) - 1] : "";
-      else if (e.parameter === "#") v = String(ctx2.positional.length);
-      else v = ctx2.vars[e.parameter] !== void 0 ? String(ctx2.vars[e.parameter]) : "";
+        v = ctx.positional[Number(e.parameter) - 1] !== void 0 ? ctx.positional[Number(e.parameter) - 1] : "";
+      else if (e.parameter === "#") v = String(ctx.positional.length);
+      else v = ctx.vars[e.parameter] !== void 0 ? String(ctx.vars[e.parameter]) : "";
     } else if (e.type === "CommandExpansion") {
-      const r = await evalNode(e.commandAST, ctx2, null);
+      const r = await evalNode(e.commandAST, ctx, null);
       v = (r.stdout || "").replace(/\n+$/, "");
     } else if (e.type === "ArithmeticExpansion") {
-      v = String(evalArith(e.arithmeticAST, ctx2));
+      v = String(evalArith(e.arithmeticAST, ctx));
     }
     segments.push({ text: v, quoted: inDouble, expansion: true, list: list2 });
     pos = e.loc.end + 1;
@@ -49054,15 +49052,15 @@ async function wordSegments(word, ctx2) {
   literal(src.slice(pos));
   return segments;
 }
-async function expandString(word, ctx2) {
-  const segs = await wordSegments(word, ctx2);
+async function expandString(word, ctx) {
+  const segs = await wordSegments(word, ctx);
   let t = segs.map((s) => s.text).join("");
   if (word.text.charAt(0) === "~" && (t === "~" || t.slice(0, 2) === "~/"))
-    t = ctx2.vars.HOME + t.slice(1);
+    t = ctx.vars.HOME + t.slice(1);
   return t;
 }
-async function expandWordToFields(word, ctx2) {
-  const segs = await wordSegments(word, ctx2);
+async function expandWordToFields(word, ctx) {
+  const segs = await wordSegments(word, ctx);
   const fields = [];
   let cur = null;
   const ensure = () => {
@@ -49079,7 +49077,7 @@ async function expandWordToFields(word, ctx2) {
     cur.pattern += text;
     if (!quoted && /[*?[]/.test(text)) cur.hasGlob = true;
   };
-  const ifs = ctx2.vars.IFS !== void 0 ? ctx2.vars.IFS : " 	\n";
+  const ifs = ctx.vars.IFS !== void 0 ? ctx.vars.IFS : " 	\n";
   const splitter = ifs === "" ? null : new RegExp("[" + ifs.replace(/[\\\]^-]/g, "\\$&") + "]+");
   segs.forEach((seg) => {
     if (seg.expansion && !seg.quoted) {
@@ -49113,7 +49111,7 @@ async function expandWordToFields(word, ctx2) {
   fields.forEach((f, idx) => {
     let t = f.pattern;
     if (idx === 0 && word.text.charAt(0) === "~" && (t === "~" || t.slice(0, 2) === "~/"))
-      t = ctx2.vars.HOME + t.slice(1);
+      t = ctx.vars.HOME + t.slice(1);
     if (f.hasGlob) {
       const matches = fg.sync(t, { cwd: process.cwd(), onlyFiles: false, dot: false });
       if (matches.length) {
@@ -49178,8 +49176,8 @@ var builtins = {
     return { stdout: args2.join(" ") + (noNewline ? "" : "\n"), stderr: "", code: 0 };
   },
   pwd: () => norm(String(shell.pwd())),
-  cd: (args2, stdin, ctx2) => {
-    const r = shell.cd(args2.length ? args2[0] : ctx2.vars.HOME);
+  cd: (args2, stdin, ctx) => {
+    const r = shell.cd(args2.length ? args2[0] : ctx.vars.HOME);
     return { stdout: "", stderr: r.stderr || "", code: r.code || 0 };
   },
   cat: (args2, stdin) => {
@@ -49254,37 +49252,45 @@ var builtins = {
   "true": () => ({ stdout: "", stderr: "", code: 0 }),
   "false": () => ({ stdout: "", stderr: "", code: 1 }),
   ":": () => ({ stdout: "", stderr: "", code: 0 }),
-  "local": (args2, stdin, ctx2) => {
-    const frame = ctx2.scopes[ctx2.scopes.length - 1];
+  "local": (args2, stdin, ctx) => {
+    const frame = ctx.scopes[ctx.scopes.length - 1];
     if (!frame) return { stdout: "", stderr: "local: \u53EA\u80FD\u5728 function \u5167\u4F7F\u7528", code: 1 };
     args2.forEach((a) => {
       const i = a.indexOf("=");
       const k = i >= 0 ? a.slice(0, i) : a;
       if (!(k in frame))
-        frame[k] = Object.prototype.hasOwnProperty.call(ctx2.vars, k) ? [true, ctx2.vars[k]] : [false];
-      ctx2.vars[k] = i >= 0 ? a.slice(i + 1) : "";
+        frame[k] = Object.prototype.hasOwnProperty.call(ctx.vars, k) ? [true, ctx.vars[k]] : [false];
+      ctx.vars[k] = i >= 0 ? a.slice(i + 1) : "";
     });
     return { stdout: "", stderr: "", code: 0 };
   },
-  "export": (args2, stdin, ctx2) => {
+  "export": (args2, stdin, ctx) => {
     args2.forEach((a) => {
       const i = a.indexOf("=");
-      if (i >= 0) ctx2.vars[a.slice(0, i)] = a.slice(i + 1);
+      if (i >= 0) ctx.vars[a.slice(0, i)] = a.slice(i + 1);
     });
     return { stdout: "", stderr: "", code: 0 };
   },
-  unset: (args2, stdin, ctx2) => {
+  unset: (args2, stdin, ctx) => {
     args2.forEach((a) => {
-      delete ctx2.vars[a];
+      delete ctx.vars[a];
     });
     return { stdout: "", stderr: "", code: 0 };
   },
-  env: (args2, stdin, ctx2) => {
-    const out = Object.keys(ctx2.vars).map((k) => k + "=" + ctx2.vars[k]).join("\n");
+  env: (args2, stdin, ctx) => {
+    const out = Object.keys(ctx.vars).map((k) => k + "=" + ctx.vars[k]).join("\n");
     return { stdout: out + "\n", stderr: "", code: 0 };
   }
 };
 var globalCommands = {};
+function commandMap(name, fn2) {
+  const map = typeof name === "string" ? { [name]: fn2 } : name || {};
+  Object.keys(map).forEach((k) => {
+    if (typeof map[k] !== "function")
+      throw new Error("registerCommand: '" + k + "' \u4E0D\u662F function");
+  });
+  return map;
+}
 function normalizeCmdResult(r) {
   if (typeof r === "string") return { stdout: r, stderr: "", code: 0 };
   if (!r) return { stdout: "", stderr: "", code: 0 };
@@ -49294,20 +49300,20 @@ function normalizeCmdResult(r) {
     code: Number(r.code) || 0
   };
 }
-async function callBuiltin(name, argv, stdin, ctx2) {
-  if (ctx2.funcs[name]) return callFunction(ctx2.funcs[name], argv, ctx2, stdin);
-  const custom = ctx2.commands && ctx2.commands[name] || globalCommands[name];
+async function callBuiltin(name, argv, stdin, ctx) {
+  if (ctx.funcs[name]) return callFunction(ctx.funcs[name], argv, ctx, stdin);
+  const custom = ctx.commands && ctx.commands[name] || globalCommands[name];
   const fn2 = custom || builtins[name];
   if (!fn2) return { stdout: "", stderr: name + ": command not found", code: 127 };
   try {
-    const r = await fn2(argv, stdin, ctx2);
+    const r = await fn2(argv, stdin, ctx);
     return custom ? normalizeCmdResult(r) : r;
   } catch (e) {
     if (e instanceof BreakSig || e instanceof ContinueSig || e instanceof ReturnSig) throw e;
     return { stdout: "", stderr: name + ": " + e.message, code: 1 };
   }
 }
-builtins.xargs = async (args2, stdin, ctx2) => {
+builtins.xargs = async (args2, stdin, ctx) => {
   let n = 0, perLine = false, placeholder = null;
   let i = 0;
   for (; i < args2.length; i++) {
@@ -49343,7 +49349,7 @@ builtins.xargs = async (args2, stdin, ctx2) => {
     let argv;
     if (placeholder) argv = base.map((a) => a.split(placeholder).join(batch[0]));
     else argv = base.concat(batch);
-    const r = await callBuiltin(cmd, argv, null, ctx2);
+    const r = await callBuiltin(cmd, argv, null, ctx);
     if (r.stdout) out += r.stdout + (r.stdout.charAt(r.stdout.length - 1) === "\n" ? "" : "\n");
     if (r.stderr) errs.push(r.stderr);
     if (r.code > worst) worst = r.code;
@@ -49383,39 +49389,39 @@ function testCmd(args2) {
   } else if (args2.length === 1) ok = args2[0].length > 0;
   return { stdout: "", stderr: "", code: ok ? 0 : 1 };
 }
-async function applyAssignments(list2, ctx2) {
+async function applyAssignments(list2, ctx) {
   for (const a of list2) {
-    const s = await expandString(a, ctx2);
+    const s = await expandString(a, ctx);
     const i = s.indexOf("=");
-    ctx2.vars[s.slice(0, i)] = s.slice(i + 1);
+    ctx.vars[s.slice(0, i)] = s.slice(i + 1);
   }
 }
-async function evalCommand(node, ctx2, stdin) {
+async function evalCommand(node, ctx, stdin) {
   const assignments = [], redirects = [];
   (node.prefix || []).concat(node.suffix || []).forEach((x) => {
     if (x.type === "Redirect") redirects.push(x);
     else if (x.type === "AssignmentWord") assignments.push(x);
   });
   if (!node.name) {
-    await applyAssignments(assignments, ctx2);
+    await applyAssignments(assignments, ctx);
     return { stdout: "", stderr: "", code: 0 };
   }
   const saved = {};
   for (const a of assignments) {
-    const s = await expandString(a, ctx2);
+    const s = await expandString(a, ctx);
     const i = s.indexOf("=");
     const k = s.slice(0, i);
-    saved[k] = ctx2.vars[k];
-    ctx2.vars[k] = s.slice(i + 1);
+    saved[k] = ctx.vars[k];
+    ctx.vars[k] = s.slice(i + 1);
   }
-  let argv = await expandWordToFields(node.name, ctx2);
+  let argv = await expandWordToFields(node.name, ctx);
   for (const x of node.suffix || []) {
-    if (x.type === "Word") argv = argv.concat(await expandWordToFields(x, ctx2));
+    if (x.type === "Word") argv = argv.concat(await expandWordToFields(x, ctx));
   }
   let input = stdin;
   for (const r of redirects) {
     if (r.op.text === "<") {
-      const target = await expandString(r.file, ctx2);
+      const target = await expandString(r.file, ctx);
       try {
         input = String(fs.readFileSync(target));
       } catch (e) {
@@ -49424,13 +49430,13 @@ async function evalCommand(node, ctx2, stdin) {
       if (heredocExpand.has(target))
         input = input.replace(/\$\{(\w+)\}|\$(\w+)/g, (mm, a, b) => {
           const k = a || b;
-          return ctx2.vars[k] !== void 0 ? ctx2.vars[k] : "";
+          return ctx.vars[k] !== void 0 ? ctx.vars[k] : "";
         });
     }
   }
-  let res = await callBuiltin(argv[0], argv.slice(1), input, ctx2);
+  let res = await callBuiltin(argv[0], argv.slice(1), input, ctx);
   for (const r of redirects) {
-    const target = await expandString(r.file, ctx2);
+    const target = await expandString(r.file, ctx);
     const isErr = r.numberIo && r.numberIo.text === "2";
     const content = isErr ? res.stderr : res.stdout;
     if (r.op.text === ">") {
@@ -49442,27 +49448,27 @@ async function evalCommand(node, ctx2, stdin) {
     else res.stdout = "";
   }
   Object.keys(saved).forEach((k) => {
-    if (saved[k] === void 0) delete ctx2.vars[k];
-    else ctx2.vars[k] = saved[k];
+    if (saved[k] === void 0) delete ctx.vars[k];
+    else ctx.vars[k] = saved[k];
   });
   return res;
 }
-async function callFunction(body, argv, ctx2, stdin) {
-  const saved = ctx2.positional;
-  ctx2.positional = argv;
-  ctx2.scopes.push({});
+async function callFunction(body, argv, ctx, stdin) {
+  const saved = ctx.positional;
+  ctx.positional = argv;
+  ctx.scopes.push({});
   try {
-    return await evalNode(body, ctx2, stdin);
+    return await evalNode(body, ctx, stdin);
   } catch (e) {
     if (e instanceof ReturnSig) return { stdout: "", stderr: "", code: e.code };
     throw e;
   } finally {
-    const frame = ctx2.scopes.pop();
+    const frame = ctx.scopes.pop();
     Object.keys(frame).forEach((k) => {
-      if (frame[k][0]) ctx2.vars[k] = frame[k][1];
-      else delete ctx2.vars[k];
+      if (frame[k][0]) ctx.vars[k] = frame[k][1];
+      else delete ctx.vars[k];
     });
-    ctx2.positional = saved;
+    ctx.positional = saved;
   }
 }
 function globToRegExp(pat) {
@@ -49483,58 +49489,58 @@ function concatRes(a, b) {
   if (out && out.charAt(out.length - 1) !== "\n" && b.stdout) out += "\n";
   return { stdout: out + b.stdout, stderr: [a.stderr, b.stderr].filter(Boolean).join("\n"), code: b.code };
 }
-async function evalNode(node, ctx2, stdin) {
+async function evalNode(node, ctx, stdin) {
   switch (node.type) {
     case "Script":
     case "CompoundList": {
       let acc = { stdout: "", stderr: "", code: 0 };
       for (const c of node.commands || []) {
-        const r = await evalNode(c, ctx2, null);
-        ctx2.lastCode = r.code;
+        const r = await evalNode(c, ctx, null);
+        ctx.lastCode = r.code;
         acc = concatRes(acc, r);
       }
       return acc;
     }
     case "LogicalExpression": {
-      const left = await evalNode(node.left, ctx2, null);
-      ctx2.lastCode = left.code;
+      const left = await evalNode(node.left, ctx, null);
+      ctx.lastCode = left.code;
       const runRight = node.op === "and" ? left.code === 0 : left.code !== 0;
       if (!runRight) return left;
-      const right = await evalNode(node.right, ctx2, null);
-      ctx2.lastCode = right.code;
+      const right = await evalNode(node.right, ctx, null);
+      ctx.lastCode = right.code;
       return concatRes(left, right);
     }
     case "Pipeline": {
       let cur = stdin, res = { stdout: "", stderr: "", code: 0 }, errs = [];
       for (const c of node.commands) {
-        res = await evalNode(c, ctx2, cur);
+        res = await evalNode(c, ctx, cur);
         if (res.stderr) errs.push(res.stderr);
         cur = res.stdout;
       }
-      ctx2.lastCode = res.code;
+      ctx.lastCode = res.code;
       return { stdout: res.stdout, stderr: errs.join("\n"), code: res.code };
     }
     case "Command":
-      return evalCommand(node, ctx2, stdin);
+      return evalCommand(node, ctx, stdin);
     case "If": {
-      const cond = await evalNode(node.clause, ctx2, null);
-      ctx2.lastCode = cond.code;
-      let branch = { stdout: "", stderr: "", code: cond.code === 0 ? 0 : ctx2.lastCode };
-      if (cond.code === 0) branch = await evalNode(node.then, ctx2, null);
-      else if (node.else) branch = await evalNode(node.else, ctx2, null);
+      const cond = await evalNode(node.clause, ctx, null);
+      ctx.lastCode = cond.code;
+      let branch = { stdout: "", stderr: "", code: cond.code === 0 ? 0 : ctx.lastCode };
+      if (cond.code === 0) branch = await evalNode(node.then, ctx, null);
+      else if (node.else) branch = await evalNode(node.else, ctx, null);
       else branch = { stdout: "", stderr: "", code: 0 };
-      ctx2.lastCode = branch.code;
+      ctx.lastCode = branch.code;
       return concatRes({ stdout: cond.stdout, stderr: cond.stderr, code: 0 }, branch);
     }
     case "For": {
       let words = [];
-      for (const w of node.wordlist || []) words = words.concat(await expandWordToFields(w, ctx2));
+      for (const w of node.wordlist || []) words = words.concat(await expandWordToFields(w, ctx));
       let acc = { stdout: "", stderr: "", code: 0 };
       for (let i = 0; i < words.length; i++) {
-        ctx2.vars[node.name.text] = words[i];
+        ctx.vars[node.name.text] = words[i];
         try {
-          const r = await evalNode(node.do, ctx2, null);
-          ctx2.lastCode = r.code;
+          const r = await evalNode(node.do, ctx, null);
+          ctx.lastCode = r.code;
           acc = concatRes(acc, r);
         } catch (e) {
           if (e instanceof BreakSig) {
@@ -49562,13 +49568,13 @@ async function evalNode(node, ctx2, stdin) {
       for (; ; ) {
         if (++iter > MAX_LOOP)
           return concatRes(acc, { stdout: "", stderr: "loop aborted: \u8D85\u904E " + MAX_LOOP + " \u6B21\u8FED\u4EE3", code: 1 });
-        const cond = await evalNode(node.clause, ctx2, null);
-        ctx2.lastCode = cond.code;
+        const cond = await evalNode(node.clause, ctx, null);
+        ctx.lastCode = cond.code;
         const go = node.type === "While" ? cond.code === 0 : cond.code !== 0;
         if (!go) break;
         try {
-          const r = await evalNode(node.do, ctx2, null);
-          ctx2.lastCode = r.code;
+          const r = await evalNode(node.do, ctx, null);
+          ctx.lastCode = r.code;
           acc = concatRes(acc, r);
         } catch (e) {
           if (e instanceof BreakSig) {
@@ -49591,36 +49597,36 @@ async function evalNode(node, ctx2, stdin) {
       return acc;
     }
     case "Case": {
-      const subject = await expandString(node.clause, ctx2);
+      const subject = await expandString(node.clause, ctx);
       for (let i = 0; i < (node.cases || []).length; i++) {
         const item = node.cases[i];
         let hit = false;
         for (const p of item.pattern || []) {
-          if (globToRegExp(await expandString(p, ctx2)).test(subject)) {
+          if (globToRegExp(await expandString(p, ctx)).test(subject)) {
             hit = true;
             break;
           }
         }
         if (hit) {
           if (!item.body) return { stdout: "", stderr: "", code: 0 };
-          const r = await evalNode(item.body, ctx2, null);
-          ctx2.lastCode = r.code;
+          const r = await evalNode(item.body, ctx, null);
+          ctx.lastCode = r.code;
           return r;
         }
       }
       return { stdout: "", stderr: "", code: 0 };
     }
     case "Function":
-      ctx2.funcs[node.name.text] = node.body;
+      ctx.funcs[node.name.text] = node.body;
       return { stdout: "", stderr: "", code: 0 };
     case "Subshell": {
       const sub = {
-        vars: Object.assign({}, ctx2.vars),
-        funcs: ctx2.funcs,
-        commands: ctx2.commands,
-        positional: ctx2.positional,
+        vars: Object.assign({}, ctx.vars),
+        funcs: ctx.funcs,
+        commands: ctx.commands,
+        positional: ctx.positional,
         scopes: [],
-        lastCode: ctx2.lastCode
+        lastCode: ctx.lastCode
       };
       return evalNode(node.list, sub, stdin);
     }
@@ -49689,7 +49695,7 @@ function normalizeSemicolons(src) {
 }
 var heredocN = 0;
 var heredocExpand = /* @__PURE__ */ new Set();
-function extractHeredocs(src, ctx2) {
+function extractHeredocs(src, ctx) {
   if (src.indexOf("<<") < 0) return src;
   const lines = src.split("\n");
   const out = [];
@@ -49721,22 +49727,127 @@ function extractHeredocs(src, ctx2) {
   }
   return out.join("\n");
 }
-async function run(cmdline, ctx2) {
+async function run(cmdline, ctx) {
   let ast;
   try {
-    ast = parse3(normalizeSemicolons(extractHeredocs(cmdline, ctx2)), { mode: "posix" });
+    ast = parse3(normalizeSemicolons(extractHeredocs(cmdline, ctx)), { mode: "posix" });
   } catch (e) {
     return { stdout: "", stderr: "parse error: " + e.message, code: 2 };
   }
   try {
-    return await evalNode(ast, ctx2, null);
+    return await evalNode(ast, ctx, null);
   } catch (e) {
     return { stdout: "", stderr: "interp error: " + e.message, code: 1 };
   }
 }
 
-// src/interp.js
-initDeps({ parse: import_bash_parser.default, shell: import_shelljs.default, fs: fs_zen_shim_default, fg: import_fast_glob.default });
+// src/base.js
+function esh(ctx) {
+  ["fs", "shell", "parse", "fg"].forEach((k) => {
+    if (!ctx[k]) throw new Error("esh: ctx \u7F3A\u5C11\u4F9D\u8CF4 '" + k + "'");
+  });
+  initDeps(ctx);
+  try {
+    ctx.fs.mkdirSync("/tmp", { recursive: true });
+    ctx.fs.writeFileSync("/tmp/.esh-check", "1");
+    if (!ctx.shell.test("-f", "/tmp/.esh-check"))
+      throw new Error("esh: ctx.fs \u8207 ctx.shell \u7D81\u5B9A\u7684 fs \u4E0D\u662F\u540C\u4E00\u500B\u5BE6\u4F5C");
+    ctx.fs.unlinkSync("/tmp/.esh-check");
+  } catch (e) {
+    if (String(e.message).indexOf("esh:") === 0) throw e;
+  }
+  const state = createContext();
+  if (ctx.commands) Object.assign(state.commands, commandMap(ctx.commands));
+  let queue = Promise.resolve();
+  const api = {
+    run: (cmdline) => {
+      const p = queue.then(() => run(cmdline, state));
+      queue = p.catch(() => {
+      });
+      return p;
+    },
+    registerCommand: (name, fn2) => {
+      Object.assign(state.commands, commandMap(name, fn2));
+      return api;
+    },
+    // io: promise 版內容傳輸子集, 與 connectShell 的 io 同簽名 —
+    // local/remote shell 對消費端 drop-in(0.2.0)。任意內容不經 shell
+    // parser, 一律走這裡;fs(node-style, sync/callback)仍在供進階使用。
+    // readFile: encoding 預設 'utf8' 回 string;null/'binary' 回 Uint8Array
+    // writeFile: content 收 string | Uint8Array;自動建父目錄
+    io: {
+      readFile: async (path, encoding) => {
+        if (encoding === void 0) encoding = "utf8";
+        if (encoding === null || encoding === "binary") {
+          return new Uint8Array(ctx.fs.readFileSync(path));
+        }
+        return String(ctx.fs.readFileSync(path, encoding));
+      },
+      writeFile: async (path, content) => {
+        const dir = path.slice(0, path.lastIndexOf("/"));
+        if (dir) ctx.fs.mkdirSync(dir, { recursive: true });
+        ctx.fs.writeFileSync(path, content);
+      }
+    },
+    cwd: () => String(ctx.shell.pwd()),
+    context: state,
+    createContext,
+    fs: ctx.fs
+  };
+  return api;
+}
+
+// src/remote.js
+init_global_inject();
+function serveShell(sh2, target, info2) {
+  let queue = Promise.resolve();
+  const enqueue = (job) => {
+    const p = queue.then(job);
+    queue = p.catch(() => {
+    });
+    return p;
+  };
+  const handler = (ev) => {
+    const msg = ev.data;
+    if (!msg || !msg.id) return;
+    if (msg.type === "hello") {
+      target.postMessage(Object.assign({ id: msg.id, type: "ready", cwd: sh2.cwd() }, info2 || {}));
+      return;
+    }
+    if (msg.type === "exec") {
+      enqueue(async () => {
+        let r;
+        try {
+          r = await sh2.run(msg.cmdline);
+        } catch (e) {
+          r = { stdout: "", stderr: "internal: " + e.message, code: 1 };
+        }
+        target.postMessage({
+          id: msg.id,
+          type: "result",
+          stdout: r.stdout || "",
+          stderr: r.stderr || "",
+          code: r.code || 0,
+          cwd: sh2.cwd()
+        });
+      });
+      return;
+    }
+    if (msg.type === "fs") {
+      enqueue(async () => {
+        try {
+          if (!sh2.io || typeof sh2.io[msg.op] !== "function") throw new Error("\u4E0D\u652F\u63F4\u7684 fs op: " + msg.op);
+          const result = await sh2.io[msg.op].apply(null, msg.args || []);
+          target.postMessage({ id: msg.id, type: "fs-result", result });
+        } catch (e) {
+          target.postMessage({ id: msg.id, type: "fs-result", error: e.message });
+        }
+      });
+    }
+  };
+  target.addEventListener("message", handler);
+  return { dispose: () => target.removeEventListener("message", handler) };
+}
 
 // src/seed.js
 init_global_inject();
@@ -49764,7 +49875,7 @@ function seed() {
 }
 
 // src/shell.worker.js
-import_shelljs2.default.config.silent = true;
+import_shelljs.default.config.silent = true;
 var persist = "in-memory";
 try {
   const handle = await navigator.storage.getDirectory();
@@ -49774,30 +49885,10 @@ try {
   persist = "in-memory (OPFS \u639B\u8F09\u5931\u6557: " + e.message + ")";
 }
 if (!fs_zen_shim_default.existsSync("/home/web/README.md")) seed();
-import_shelljs2.default.cd("/home/web");
-var ctx = createContext();
-var queue = Promise.resolve();
-self.onmessage = (ev) => {
-  const msg = ev.data;
-  if (msg.type !== "exec") return;
-  queue = queue.then(async () => {
-    let r;
-    try {
-      r = await run(msg.cmdline, ctx);
-    } catch (e) {
-      r = { stdout: "", stderr: "internal: " + e.message, code: 1 };
-    }
-    self.postMessage({
-      id: msg.id,
-      type: "result",
-      stdout: r.stdout || "",
-      stderr: r.stderr || "",
-      code: r.code || 0,
-      cwd: String(import_shelljs2.default.pwd())
-    });
-  });
-};
-self.postMessage({ type: "ready", cwd: String(import_shelljs2.default.pwd()), persist });
+import_shelljs.default.cd("/home/web");
+var sh = esh({ fs: fs_zen_shim_default, shell: import_shelljs.default, parse: import_bash_parser.default, fg: import_fast_glob.default });
+serveShell(sh, self, { persist });
+self.postMessage({ type: "ready", cwd: sh.cwd(), persist });
 /*! Bundled license information:
 
 ieee754/index.js:
