@@ -1,82 +1,80 @@
 # @plotdb/esh
 
-esh — embeddable shell runtime for JavaScript。
-shell 語法直譯器 + 虛擬檔案系統,跑在瀏覽器(可 OPFS 持久化)、Node、Worker。
+esh — embeddable shell runtime for JavaScript.
 
-支援語法:pipe、redirect(`> >> < 2>`、heredoc)、`$VAR`/quoting/glob、
-`$(...)`、`$(( ))` 算術、`if`/`for`/`while`/`case`/function、
-`local`、`$@`、自訂 IFS、`xargs` 等。指令本體目前由 ShellJS 提供
-(演化路線見專案 plan)。
+A shell syntax interpreter with a virtual file system. Runs in the browser
+( with optional OPFS persistence ), in Node, and in workers.
+
+Supported syntax: pipes, redirects ( `>` `>>` `<` `2>`, heredoc ), variable
+expansion and quoting, glob, command substitution `$(...)`, arithmetic
+`$(( ))`, `if` / `for` / `while` / `case`, functions, `local`, `$@`, custom
+`IFS`, `xargs`, and more. Commands are currently provided by ShellJS; see the
+project plan for the evolution roadmap.
 
 
-## 使用
+## Usage
 
-### 瀏覽器(ESM)
+### Browser ( ESM )
 
-```html
-<script type="module">
-  import { createShell } from '@plotdb/esh';   // bundler 環境
-  // 或直接: import { createShell } from './dist/esh.js';
-  const sh = await createShell();
-  const r = sh.run('ls | grep foo');           // { stdout, stderr, code }
-</script>
-```
+    <script type="module">
+      import { createShell } from '@plotdb/esh';   // with a bundler
+      // or directly: import { createShell } from './dist/esh.js';
+      const sh = await createShell();
+      const r = sh.run('ls | grep foo');           // { stdout, stderr, code }
+    </script>
 
-OPFS 持久化:
+With OPFS persistence:
 
-```js
-const sh = await createShell({ mounts: { '/home': { backend: 'opfs' } } });
-```
+    const sh = await createShell({ mounts: { '/home': { backend: 'opfs' } } });
 
-### 瀏覽器(非 ESM, window.esh)
+### Browser ( non-ESM, `window.esh` )
 
-```html
-<script src="dist/esh.iife.js"></script>
-<script>
-  esh.createShell().then(function(sh) { sh.run('echo hi'); });
-</script>
-```
+    <script src="dist/esh.iife.js"></script>
+    <script>
+      esh.createShell().then(function(sh) { sh.run('echo hi'); });
+    </script>
 
 ### Node
 
-```js
-import { createShell } from '@plotdb/esh';   // 真 fs, 零墊片
-const sh = await createShell();
-// 沙箱: createShell({ fs: memfs 實例 }) — 注意需與 shell 同 fs, 見 src/base.js
-```
+    import { createShell } from '@plotdb/esh';   // real fs, no shims needed
+    const sh = await createShell();
+    // sandbox: createShell({ fs: a memfs instance }) — note that fs and shell
+    // must share the same fs implementation; see src/base.js
 
-### 終端(esh-term, 隨主套件出貨的獨立檔案)
+### Terminal ( `esh-term`, shipped with the main package as separate files )
 
-```html
-<link rel="stylesheet" href="dist/esh-term.css">
-<script src="dist/esh-term.iife.js"></script>
-<script>
-  // dist/esh-worker.js 需與 esh-term 同目錄部署(或以 workerUrl 指定)
-  eshTerm.createTerminal(document.getElementById('term'));
-</script>
-```
+    <link rel="stylesheet" href="dist/esh-term.css">
+    <script src="dist/esh-term.iife.js"></script>
+    <script>
+      // deploy dist/esh-worker.js next to esh-term, or pass workerUrl
+      eshTerm.createTerminal(document.getElementById('term'));
+    </script>
 
-ESM: `import { createTerminal } from '@plotdb/esh/term'`。
-shell 跑在 Web Worker(esh-worker.js, 含完整引擎),/home 掛 OPFS 持久化。
+ESM: `import { createTerminal } from '@plotdb/esh/term'`. The shell runs in a
+Web Worker ( `esh-worker.js`, which contains the full engine ), with `/home`
+mounted on OPFS for persistence.
 
-### 進階:自組依賴(base 層)
+### Advanced: bring your own dependencies ( base layer )
 
-```js
-import { esh } from '@plotdb/esh/base';
-const sh = esh({ fs, shell, parse, fg });    // 依賴自備, bundler-agnostic
-```
+    import { esh } from '@plotdb/esh/base';
+    const sh = esh({ fs, shell, parse, fg });    // bundler-agnostic
 
 
-## 開發
+## Development
 
-- `npm run build` — esbuild 打包 dist/(esm + iife),並複製到 web/static/assets/esh/
-- `npm run dev` — vite dev server,迴歸測試頁在 web/vitedev/:
-  /web/vitedev/m2.html(指令存活表 81 項)、/web/vitedev/m25.html(語法測項 72 項)、
-  /web/vitedev/terminal.html(xterm + worker + OPFS)
-- `npm start` — fedev template server(web/:pug demo 與靜態頁,只消費 dist 成品)
+ - `npm run build` — bundle with esbuild into `dist/` ( esm + iife ), then
+   copy to `web/static/assets/esh/`
+ - `npm run dev` — vite dev server for regression test pages under
+   `web/vitedev/`: `m2.html` ( command survival table, 81 cases ),
+   `m25.html` ( syntax cases, 72 cases ), `terminal.html`
+   ( xterm + worker + OPFS )
+ - `npm start` — fedev template server ( `web/`: pug demo and static pages,
+   consuming `dist/` artifacts only )
 
-vite 僅供 web/vitedev/ 測試頁(需 source-level alias);成品與 web/ demo 皆不依賴 vite。
-早期 PoC(poc-shelljs/)已移除,完整演進見 git history。
+Vite is only used by the test pages under `web/vitedev/`, which need
+source-level alias resolution; the shipped artifacts and the `web/` demo do
+not depend on vite. The early PoC ( `poc-shelljs/` ) has been removed; see
+git history for the full evolution.
 
 
 ## License
