@@ -101,9 +101,13 @@ function/return/local、break/continue(含層數)、export/unset、~ 展開
 
 ## fs
 
-- ZenFS(@zenfs/core),shim 修補五項行為差異(相對路徑 cwd hook、
+- ZenFS(@zenfs/core),shim 修補六項行為差異(相對路徑 cwd hook、
   readdir 排序、symlink null type、目錄 chmod EISDIR 靜默、
-  chdir 驗證目標存在且為目錄 — 0.3.0, 否則 cd 不存在路徑會誤成功)
+  chdir 驗證目標存在且為目錄 — 0.3.0, 否則 cd 不存在路徑會誤成功、
+  hardenAsyncMounts — 0.3.2, zenfs Async mixin 的 replay 偵測在 bundle 後
+  失效導致 OPFS 上 sync 寫入靜默清空檔案, 見 tasks/opfs-sync-write-loss.md)
+- redirect(`>`/`>>`)走 async 寫 + 回讀驗證(0.3.2),失敗回
+  stderr + code 1;writeFileSync 寫後驗 size(失真丟 EIO)
 - 掛載:/home → OPFS(WebAccess, 持久)、/tmp → InMemory(預設)
 - Node 宿主可換 memfs 做沙箱(需自行確保 fs/shell 同世界)
 

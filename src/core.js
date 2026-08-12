@@ -257,6 +257,33 @@ function parseSedExpr(expr) {
   return { regex: new RegExp(parts[0], re), replacement: parts[1] };
 }
 
+// `;` 串接的多重 s/// (s/a/b/;s/c/d/)。分隔的 `;` 只在完整 s 運算式之後
+// 才算數 (s/// 內的 `;` 是字面值)。解析失敗回 null — 呼叫端報錯, 不靜默。
+function parseSedExprs(expr) {
+  const out = [];
+  let i = 0;
+  while(i < expr.length) {
+    if(expr.charAt(i) !== "s" || i + 3 >= expr.length) return null;
+    const d = expr.charAt(i + 1);
+    let seen = 0, j = i + 2, esc = false;
+    for(; j < expr.length; j++) {
+      const c = expr.charAt(j);
+      if(esc) { esc = false; continue; }
+      if(c === "\\") { esc = true; continue; }
+      if(c === d) { seen++; if(seen === 2) break; }
+    }
+    if(seen < 2) return null;
+    j++; // 越過第三個分隔符, 之後到 ; 或字尾都是 mods
+    while(j < expr.length && expr.charAt(j) !== ";") j++;
+    const one = parseSedExpr(expr.slice(i, j));
+    if(!one) return null;
+    out.push(one);
+    if(expr.charAt(j) === ";") j++;
+    i = j;
+  }
+  return out.length ? out : null;
+}
+
 const builtins = {
   echo: (args) => {
     let noNewline = false;
@@ -280,19 +307,46 @@ const builtins = {
   },
   grep: (args, stdin) => {
     const { flags, rest } = splitFlags(args);
-    const fstr = flags.length ? flags.join("").replace(/-/g, "") : null;
+    let fstr = flags.length ? flags.join("").replace(/-/g, "") : "";
+    // -c (計數) / -q (安靜) shelljs 不支援, 這裡自行處理; 並補 POSIX 語意:
+    // 無符合 → exit code 1 (shelljs 一律回 0)
+    const count = fstr.indexOf("c") >= 0, quiet = fstr.indexOf("q") >= 0;
+    fstr = fstr.replace(/[cq]/g, "");
     const a = fstr ? ["-" + fstr] : [];
-    if(rest.length > 1) return norm(shell.grep.apply(shell, a.concat(rest)));
-    return norm(pipeSrc(stdin).grep.apply(pipeSrc(stdin), a.concat(rest)));
+    const r = rest.length > 1
+      ? norm(shell.grep.apply(shell, a.concat(rest)))
+      : norm(pipeSrc(stdin).grep.apply(pipeSrc(stdin), a.concat(rest)));
+    // shelljs 無符合時回 code 1 + 空訊息的 "grep: " — 視為 0 筆, 非錯誤
+    const noMatch = r.code === 1 && !r.stdout && r.stderr.replace(/\s+$/, "") === "grep:";
+    if(r.code && !noMatch) return r; // flag 不支援等真錯誤照實回報
+    const lines = noMatch ? "" : r.stdout.replace(/\n+$/, "");
+    const n = lines === "" ? 0 : lines.split("\n").length;
+    if(quiet) return { stdout: "", stderr: "", code: n ? 0 : 1 };
+    if(count) return { stdout: n + "\n", stderr: "", code: n ? 0 : 1 };
+    return { stdout: noMatch ? "" : r.stdout, stderr: noMatch ? "" : r.stderr, code: n ? 0 : 1 };
   },
   sed: (args, stdin) => {
     const { flags, rest } = splitFlags(args);
-    const e = parseSedExpr(rest[0] || "");
-    if(!e) return { stdout: "", stderr: "sed: 只支援 s/pat/rep/[gi] 運算式", code: 1 };
+    const exprs = parseSedExprs(rest[0] || "");
+    if(!exprs) return { stdout: "", stderr: "sed: 只支援 s/pat/rep/[gi] 運算式 (可用 ; 串接多段)", code: 1 };
     const files = rest.slice(1);
-    const a = flags.concat([e.regex, e.replacement]);
-    if(files.length) return norm(shell.sed.apply(shell, a.concat(files)));
-    return norm(pipeSrc(stdin).sed.apply(pipeSrc(stdin), a));
+    if(files.length) {
+      if(flags.indexOf("-i") >= 0) {
+        // in-place: 逐 expr 各跑一輪 (每輪重讀檔案, 依序疊加)
+        let last = null;
+        for(const e of exprs) {
+          last = norm(shell.sed.apply(shell, flags.concat([e.regex, e.replacement]).concat(files)));
+          if(last.code) return last;
+        }
+        return last;
+      }
+      let s = files.map((f) => String(shell.cat(f))).join("");
+      for(const e of exprs) s = String(pipeSrc(s).sed(e.regex, e.replacement));
+      return { stdout: s, stderr: "", code: 0 };
+    }
+    let out = stdin === null ? "" : stdin;
+    for(const e of exprs) out = String(pipeSrc(out).sed(e.regex, e.replacement));
+    return { stdout: out, stderr: "", code: 0 };
   },
   sort: (args, stdin) => {
     const { flags, rest } = splitFlags(args);
@@ -538,9 +592,13 @@ async function evalCommand(node, ctx, stdin) {
     const target = await expandString(r.file, ctx);
     const isErr = r.numberIo && r.numberIo.text === "2";
     const content = isErr ? res.stderr : res.stdout;
-    if(r.op.text === ">") { shell.ShellString(content).to(target); }
-    else if(r.op.text === ">>") { shell.ShellString(content).toEnd(target); }
-    else continue;
+    if(r.op.text !== ">" && r.op.text !== ">>") continue;
+    if(target === "/dev/null") { if(isErr) res.stderr = ""; else res.stdout = ""; continue; }
+    try { await writeRedirect(target, content, r.op.text === ">>"); }
+    catch(e) {
+      res = { stdout: res.stdout, stderr: (res.stderr ? res.stderr + "\n" : "") + "redirect: " + target + ": " + e.message, code: 1 };
+      continue;
+    }
     if(isErr) res.stderr = ""; else res.stdout = "";
   }
 
@@ -549,6 +607,21 @@ async function evalCommand(node, ctx, stdin) {
     else ctx.vars[k] = saved[k];
   });
   return res;
+}
+
+// redirect 寫入: 一律走 async 寫 + 回讀驗證, 失敗丟錯 (呼叫端轉 stderr + code 1)。
+// 背景: OPFS 這類 async backend 的 sync 寫入曾發生「truncate 生效、內容未寫入」的
+// 靜默失真 (見 tasks/opfs-sync-write-loss.md) — async 寫入路徑實測可靠, 且
+// evaluator 本來就是 async, 不用付同步的代價。
+async function writeRedirect(target, content, append) {
+  if(append && fs.promises && fs.promises.appendFile) await fs.promises.appendFile(target, content);
+  else if(!append && fs.promises && fs.promises.writeFile) await fs.promises.writeFile(target, content);
+  else if(append) fs.appendFileSync(target, content);
+  else fs.writeFileSync(target, content);
+  if(!append) {
+    const back = String(fs.readFileSync(target));
+    if(back !== content) throw new Error("寫入驗證失敗 (回讀與寫入內容不符)");
+  }
 }
 
 async function callFunction(body, argv, ctx, stdin) {
