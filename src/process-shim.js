@@ -1,6 +1,9 @@
 // 取代 vite-plugin-node-polyfills/shims/process:
 // 補上 cwd/chdir/versions 等 shelljs + fast-glob 會用到的欄位
 let cwd = "/home/web";
+// scoped root (withFsScope) 用的 raw 存取 — 不觸發驗證與 zenfs pwd 同步
+globalThis.__eshGetCwd = () => cwd;
+globalThis.__eshSetCwd = (v) => { cwd = v; };
 const listeners = {};
 const process = {
   platform: "linux",

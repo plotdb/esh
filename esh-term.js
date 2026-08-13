@@ -1821,6 +1821,10 @@ var init_process_shim = __esm({
   "src/process-shim.js"() {
     init_global_inject();
     cwd = "/home/web";
+    globalThis.__eshGetCwd = () => cwd;
+    globalThis.__eshSetCwd = (v2) => {
+      cwd = v2;
+    };
     listeners = {};
     process = {
       platform: "linux",

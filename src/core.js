@@ -18,8 +18,31 @@ export function createContext() {
     positional: [],
     scopes: [],
     lastCode: 0,
-    esh: null // base.js 於 esh(ctx) 時填 {fs, cwd} — 供自訂指令碰檔案 (0.3.0)
+    esh: null // base.js 於 esh(ctx) 時填 {fs, cwd} — 供自訂指令碰檔案 (0.3.0);
+              // rooted shell 另有 {scope, withScope} (0.4.0, 見 base.js)
   };
+}
+
+// ---------- scoped root 輔助 (0.4.0) ----------
+// rooted shell: 同步的 shelljs/fg 呼叫以 ctx.esh.withScope 括住(全域 context
+// 暫換為該 shell 的 root/pwd);core 自己的 fs 操作走 ctx fs + 明確路徑解析。
+function scoped(ctx, fn) {
+  return ctx.esh && ctx.esh.withScope ? ctx.esh.withScope(fn) : fn();
+}
+function ctxFs(ctx) {
+  return (ctx.esh && ctx.esh.fs) || fs;
+}
+// shell 使用者輸入的路徑 → 該 shell 可見座標系的絕對路徑(純字串, .. 夾在 / 內)
+function resolveUserPath(ctx, p) {
+  const cwd = ctx.esh && ctx.esh.scope ? ctx.esh.scope.procCwd : (typeof process !== "undefined" && process.cwd ? process.cwd() : "/");
+  const abs = p.charAt(0) === "/" ? p : cwd + "/" + p;
+  const parts = [];
+  abs.split("/").forEach((s) => {
+    if(!s || s === ".") return;
+    if(s === "..") parts.pop();
+    else parts.push(s);
+  });
+  return "/" + parts.join("/");
 }
 
 // ---------- $(( )) 算術 (babel-style AST from bash-parser) ----------
@@ -210,7 +233,7 @@ async function expandWordToFields(word, ctx) {
     if(idx === 0 && word.text.charAt(0) === "~" && (t === "~" || t.slice(0, 2) === "~/"))
       t = ctx.vars.HOME + t.slice(1);
     if(f.hasGlob) {
-      const matches = fg.sync(t, { cwd: process.cwd(), onlyFiles: false, dot: false });
+      const matches = scoped(ctx, () => fg.sync(t, { cwd: process.cwd(), onlyFiles: false, dot: false }));
       if(matches.length) { out.push.apply(out, matches.sort()); return; }
     }
     out.push(t);
@@ -455,7 +478,9 @@ async function callBuiltin(name, argv, stdin, ctx) {
   const fn = custom || builtins[name];
   if(!fn) return { stdout: "", stderr: name + ": command not found", code: 127 };
   try {
-    const r = await fn(argv, stdin, ctx); // 自訂指令可回傳 Promise (async fn)
+    // builtin(shelljs 系, 同步)以 scope 括住 — rooted shell 的圍堵點;
+    // 自訂指令可回傳 Promise, 自行經 ctx.esh.fs(bound)碰檔案, 不括
+    const r = custom ? await fn(argv, stdin, ctx) : await scoped(ctx, () => fn(argv, stdin, ctx));
     return custom ? normalizeCmdResult(r) : r;
   }
   catch(e) {
@@ -576,7 +601,7 @@ async function evalCommand(node, ctx, stdin) {
   for(const r of redirects) {
     if(r.op.text === "<") {
       const target = await expandString(r.file, ctx);
-      try { input = String(fs.readFileSync(target)); }
+      try { input = String(ctxFs(ctx).readFileSync(resolveUserPath(ctx, target))); }
       catch(e) { input = ""; }
       if(heredocExpand.has(target))
         input = input.replace(/\$\{(\w+)\}|\$(\w+)/g, (mm, a, b) => {
@@ -594,7 +619,7 @@ async function evalCommand(node, ctx, stdin) {
     const content = isErr ? res.stderr : res.stdout;
     if(r.op.text !== ">" && r.op.text !== ">>") continue;
     if(target === "/dev/null") { if(isErr) res.stderr = ""; else res.stdout = ""; continue; }
-    try { await writeRedirect(target, content, r.op.text === ">>"); }
+    try { await writeRedirect(ctx, resolveUserPath(ctx, target), content, r.op.text === ">>"); }
     catch(e) {
       res = { stdout: res.stdout, stderr: (res.stderr ? res.stderr + "\n" : "") + "redirect: " + target + ": " + e.message, code: 1 };
       continue;
@@ -613,13 +638,16 @@ async function evalCommand(node, ctx, stdin) {
 // 背景: OPFS 這類 async backend 的 sync 寫入曾發生「truncate 生效、內容未寫入」的
 // 靜默失真 (見 tasks/opfs-sync-write-loss.md) — async 寫入路徑實測可靠, 且
 // evaluator 本來就是 async, 不用付同步的代價。
-async function writeRedirect(target, content, append) {
-  if(append && fs.promises && fs.promises.appendFile) await fs.promises.appendFile(target, content);
-  else if(!append && fs.promises && fs.promises.writeFile) await fs.promises.writeFile(target, content);
-  else if(append) fs.appendFileSync(target, content);
-  else fs.writeFileSync(target, content);
+async function writeRedirect(ctx, target, content, append) {
+  const f = ctxFs(ctx);
+  if(append && f.promises && f.promises.appendFile) await f.promises.appendFile(target, content);
+  else if(!append && f.promises && f.promises.writeFile) await f.promises.writeFile(target, content);
+  else if(append) f.appendFileSync(target, content);
+  else f.writeFileSync(target, content);
   if(!append) {
-    const back = String(fs.readFileSync(target));
+    // char device (0.4.0 device backend) 的寫入可能有損轉換, 回讀不必相符 — 跳過驗證
+    try { if((f.statSync(target).mode & 0xF000) === 0x2000) return; } catch(e) { /* 驗證照舊 */ }
+    const back = String(f.readFileSync(target));
     if(back !== content) throw new Error("寫入驗證失敗 (回讀與寫入內容不符)");
   }
 }
@@ -850,9 +878,9 @@ function extractHeredocs(src, ctx) {
       body.push(l);
     }
     const content = body.length ? body.join("\n") + "\n" : "";
-    try { fs.mkdirSync("/tmp", { recursive: true }); } catch(e) { /* 已存在 */ }
+    try { ctxFs(ctx).mkdirSync("/tmp", { recursive: true }); } catch(e) { /* 已存在 */ }
     const path = "/tmp/.heredoc-" + (++heredocN);
-    fs.writeFileSync(path, content);
+    ctxFs(ctx).writeFileSync(path, content);
     // 變數展開延後到讀取時 (同一行 NAME=w; cat <<EOF 的賦值才來得及生效)
     if(!quotedDelim) heredocExpand.add(path);
     out.push(line.replace(m[0], "< " + path));

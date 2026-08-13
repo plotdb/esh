@@ -1,8 +1,40 @@
 // alias target for 'fs' — ZenFS 版 (branch dev/zenfs)
 // ZenFS 相對路徑用自己的 context cwd, 不理 process.cwd() —
 // 掛 hook 讓 process-shim 的 chdir 同步過來
-import { fs, defaultContext, mounts } from "@zenfs/core";
+import { fs, defaultContext, mounts, bindContext } from "@zenfs/core";
 export * from "@zenfs/core";
+
+// --- scoped root (chroot) 支援(0.4.0, 見 tasks/scoped-root-and-device-backend.md)---
+// per-shell root: shell 執行 shelljs/fast-glob 這類「綁全域 fs」的同步指令時,
+// 以 withFsScope 暫時把 zenfs defaultContext 的 root/pwd(與 process-shim cwd)
+// 換成該 shell 的 scope — 同步區間內單執行緒, 不會與其他 shell 交錯;
+// core 自己的非同步寫入與自訂指令則用 bindContext 的 bound fs(context 隨呼叫走)。
+// zenfs 的路徑解析先對「使用者可見 root(/)」正規化再 join(ctx.root),
+// `..` 在 / 就被夾住, 絕對路徑一律 re-root — 這是圍堵的核心保證。
+export function makeFsScope(root) {
+  fs.mkdirSync(root, { recursive: true });
+  const bound = bindContext({ root, pwd: "/" });
+  return { root, pwd: "/", procCwd: "/", fs: bound.fs };
+}
+export function withFsScope(scope, fn) {
+  if(!scope) return fn();
+  const saved = {
+    root: defaultContext.root, pwd: defaultContext.pwd,
+    proc: globalThis.__eshGetCwd ? globalThis.__eshGetCwd() : null
+  };
+  defaultContext.root = scope.root;
+  defaultContext.pwd = scope.pwd;
+  if(globalThis.__eshSetCwd) globalThis.__eshSetCwd(scope.procCwd);
+  try { return fn(); }
+  finally {
+    // 捕捉 cd 效果回 scope, 再還原全域
+    scope.pwd = defaultContext.pwd;
+    if(globalThis.__eshGetCwd) scope.procCwd = globalThis.__eshGetCwd();
+    defaultContext.root = saved.root;
+    defaultContext.pwd = saved.pwd;
+    if(saved.proc !== null && globalThis.__eshSetCwd) globalThis.__eshSetCwd(saved.proc);
+  }
+}
 
 // --- zenfs Async mixin 修補(資料遺失, 見 tasks/opfs-sync-write-loss.md)---
 // async backend (OPFS/WebAccess) 的 sync 寫入 = 寫入記憶體鏡像 + 排 async replay。
@@ -30,11 +62,27 @@ export function hardenAsyncMounts() {
       finally { inst.__eshInReplay = false; }
     });
     const proto = Object.getPrototypeOf(inst);
+    // WebAccess 的 write 用 createWritable({keepExistingData}) 從 offset 覆寫,
+    // 從不截斷 — 覆寫較短內容時舊尾巴留在 OPFS 上, 鏡像蓋住看不見, 重載才爆
+    // (tasks/opfs-overwrite-no-truncate.md)。touch 帶 size 時是唯一知道
+    // 「檔案邏輯長度」的時機: 若真檔比 size 長, 補一刀 truncate。
+    const truncateReal = async (path, size) => {
+      if(typeof inst.get !== "function") return; // 僅 WebAccess 形狀的 backend
+      const handle = await inst.get("file", path).catch(() => null);
+      if(!handle || handle.kind !== "file") return;
+      const f = await handle.getFile();
+      if(f.size <= size) return;
+      const w = await handle.createWritable({ keepExistingData: true });
+      await w.truncate(size);
+      await w.close();
+    };
     ["rename", "touch", "createFile", "unlink", "rmdir", "mkdir", "link", "write"].forEach((key) => {
       const original = proto[key]; // 類別上未被 _patchAsync 蓋掉的原始方法
       if(typeof original !== "function") return;
       inst[key] = async (...args) => {
         const result = await original.apply(inst, args);
+        if(key === "touch" && args[1] && typeof args[1].size === "number")
+          await truncateReal(args[0], args[1].size).catch(() => {});
         if(inst.__eshInReplay || !inst._isInitialized) return result;
         // 直接的 async 呼叫(如 fs.promises.writeFile)照 zenfs 原意同步進鏡像
         try { inst._sync[key + "Sync"] && inst._sync[key + "Sync"](...args); }
@@ -96,7 +144,9 @@ function writeFileSyncVerified(path, data, options) {
   if(typeof data === "string" && enc === "utf8") expect = new TextEncoder().encode(data).length;
   else if(data && data.byteLength !== undefined) expect = data.byteLength;
   if(expect === null) return; // 其他 encoding 不驗
-  const size = fs.statSync(path).size;
+  const st = fs.statSync(path);
+  if((st.mode & 0xF000) === 0x2000) return; // char device (device backend) — 寫入可能有損, 不驗
+  const size = st.size;
   if(size !== expect) {
     const e = new Error("EIO: 寫入未落地 (寫後 size " + size + " != 預期 " + expect + "): " + path);
     e.code = "EIO";

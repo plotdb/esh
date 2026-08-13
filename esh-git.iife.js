@@ -1827,6 +1827,10 @@ var eshGit = (() => {
     "src/process-shim.js"() {
       init_global_inject();
       cwd = "/home/web";
+      globalThis.__eshGetCwd = () => cwd;
+      globalThis.__eshSetCwd = (v) => {
+        cwd = v;
+      };
       listeners = {};
       process = {
         platform: "linux",

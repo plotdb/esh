@@ -1,5 +1,29 @@
 # Change Logs
 
+## v0.4.0
+
+ - features(wagent 需求, 見 tasks/scoped-root-and-device-backend.md):
+   - **scoped root(chroot)**:`createShell({root})` / `sh.chroot(p)` —
+     per-shell root, shell 指令與 io 全被關在 root 內("/" 即 root)。
+     圍堵在 fs 層保證:zenfs 路徑解析先對可見 root 正規化再 join(ctx.root),
+     `..` 在 / 夾住、絕對路徑一律 re-root;shelljs/fast-glob 這類綁全域 fs
+     的同步指令以 withFsScope 括住(同步區間單執行緒, 不與他 shell 交錯),
+     core 自身與自訂指令走 bindContext 的 bound fs。同一份 fs 可多個 shell
+     各自不同 root(agent 限縮、終端不限), 互見彼此寫入。
+     chroot 為 host 端 JS API, shell 指令內呼叫不到。僅瀏覽器 bundle 支援
+     (Node 宿主給 root 會明確報錯)
+   - **device backend**:`{backend: 'device', files: {name: {read, write?}}}` —
+     callback-backed 檔案(char device)。sync-authoritative 無鏡像無快取
+     (vnode 對 char device bypassCache);stat size 每次當場物化;
+     無 write → EROFS 明確報錯;範圍為整檔 read/write(offset 0)。
+     rooted shell 要看 device, 把 device 掛在 root 內的路徑即可
+ - bugfixes:
+   - **OPFS 覆寫較短內容不截斷**(tasks/opfs-overwrite-no-truncate.md):
+     WebAccess.write 用 createWritable({keepExistingData}) 從不截斷,
+     舊尾巴留在磁碟、鏡像蓋住看不見、重載才爆。hardenAsyncMounts 的
+     touch wrapper 在 metadata 帶 size 且真檔較長時補 truncate —
+     io 與 shell redirect 兩路徑實測磁碟直讀皆無殘留
+
 ## v0.3.2
 
  - bugfixes(資料遺失, wagent 回報 — 見 tasks/opfs-sync-write-loss.md):

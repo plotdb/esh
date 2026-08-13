@@ -1836,6 +1836,10 @@ var init_process_shim = __esm({
   "src/process-shim.js"() {
     init_global_inject();
     cwd = "/home/web";
+    globalThis.__eshGetCwd = () => cwd;
+    globalThis.__eshSetCwd = (v) => {
+      cwd = v;
+    };
     listeners = {};
     process2 = {
       platform: "linux",
@@ -23578,6 +23582,7 @@ __export(fs_zen_shim_exports, {
   lstatSync: () => lstatSync,
   lutimes: () => lutimes2,
   lutimesSync: () => lutimesSync,
+  makeFsScope: () => makeFsScope,
   mkdir: () => mkdir4,
   mkdirSync: () => mkdirSync,
   mkdtemp: () => mkdtemp2,
@@ -23643,6 +23648,7 @@ __export(fs_zen_shim_exports, {
   watch: () => watch2,
   watchFile: () => watchFile,
   withExceptionContext: () => withExceptionContext,
+  withFsScope: () => withFsScope,
   withPath: () => withPath,
   wrap: () => wrap,
   write: () => write,
@@ -23654,6 +23660,31 @@ __export(fs_zen_shim_exports, {
   xattr: () => xattr_exports,
   zeroDevice: () => zeroDevice
 });
+function makeFsScope(root) {
+  compat_exports.mkdirSync(root, { recursive: true });
+  const bound = bindContext({ root, pwd: "/" });
+  return { root, pwd: "/", procCwd: "/", fs: bound.fs };
+}
+function withFsScope(scope, fn2) {
+  if (!scope) return fn2();
+  const saved = {
+    root: defaultContext.root,
+    pwd: defaultContext.pwd,
+    proc: globalThis.__eshGetCwd ? globalThis.__eshGetCwd() : null
+  };
+  defaultContext.root = scope.root;
+  defaultContext.pwd = scope.pwd;
+  if (globalThis.__eshSetCwd) globalThis.__eshSetCwd(scope.procCwd);
+  try {
+    return fn2();
+  } finally {
+    scope.pwd = defaultContext.pwd;
+    if (globalThis.__eshGetCwd) scope.procCwd = globalThis.__eshGetCwd();
+    defaultContext.root = saved.root;
+    defaultContext.pwd = saved.pwd;
+    if (saved.proc !== null && globalThis.__eshSetCwd) globalThis.__eshSetCwd(saved.proc);
+  }
+}
 function hardenAsyncMounts() {
   const readies = [];
   for (const [, inst] of mounts) {
@@ -23672,11 +23703,24 @@ function hardenAsyncMounts() {
       }
     });
     const proto = Object.getPrototypeOf(inst);
+    const truncateReal = async (path, size) => {
+      if (typeof inst.get !== "function") return;
+      const handle = await inst.get("file", path).catch(() => null);
+      if (!handle || handle.kind !== "file") return;
+      const f = await handle.getFile();
+      if (f.size <= size) return;
+      const w = await handle.createWritable({ keepExistingData: true });
+      await w.truncate(size);
+      await w.close();
+    };
     ["rename", "touch", "createFile", "unlink", "rmdir", "mkdir", "link", "write"].forEach((key) => {
       const original = proto[key];
       if (typeof original !== "function") return;
       inst[key] = async (...args2) => {
         const result = await original.apply(inst, args2);
+        if (key === "touch" && args2[1] && typeof args2[1].size === "number")
+          await truncateReal(args2[0], args2[1].size).catch(() => {
+          });
         if (inst.__eshInReplay || !inst._isInitialized) return result;
         try {
           inst._sync[key + "Sync"] && inst._sync[key + "Sync"](...args2);
@@ -23713,7 +23757,9 @@ function writeFileSyncVerified(path, data, options) {
   if (typeof data === "string" && enc === "utf8") expect = new TextEncoder().encode(data).length;
   else if (data && data.byteLength !== void 0) expect = data.byteLength;
   if (expect === null) return;
-  const size = compat_exports.statSync(path).size;
+  const st = compat_exports.statSync(path);
+  if ((st.mode & 61440) === 8192) return;
+  const size = st.size;
   if (size !== expect) {
     const e = new Error("EIO: \u5BEB\u5165\u672A\u843D\u5730 (\u5BEB\u5F8C size " + size + " != \u9810\u671F " + expect + "): " + path);
     e.code = "EIO";
@@ -48973,8 +49019,26 @@ function createContext() {
     scopes: [],
     lastCode: 0,
     esh: null
-    // base.js 於 esh(ctx) 時填 {fs, cwd} — 供自訂指令碰檔案 (0.3.0)
+    // base.js 於 esh(ctx) 時填 {fs, cwd} — 供自訂指令碰檔案 (0.3.0);
+    // rooted shell 另有 {scope, withScope} (0.4.0, 見 base.js)
   };
+}
+function scoped(ctx, fn2) {
+  return ctx.esh && ctx.esh.withScope ? ctx.esh.withScope(fn2) : fn2();
+}
+function ctxFs(ctx) {
+  return ctx.esh && ctx.esh.fs || fs;
+}
+function resolveUserPath(ctx, p) {
+  const cwd2 = ctx.esh && ctx.esh.scope ? ctx.esh.scope.procCwd : typeof process !== "undefined" && process.cwd ? process.cwd() : "/";
+  const abs = p.charAt(0) === "/" ? p : cwd2 + "/" + p;
+  const parts = [];
+  abs.split("/").forEach((s) => {
+    if (!s || s === ".") return;
+    if (s === "..") parts.pop();
+    else parts.push(s);
+  });
+  return "/" + parts.join("/");
 }
 function evalArith(n, ctx) {
   switch (n.type) {
@@ -49179,7 +49243,7 @@ async function expandWordToFields(word, ctx) {
     if (idx === 0 && word.text.charAt(0) === "~" && (t === "~" || t.slice(0, 2) === "~/"))
       t = ctx.vars.HOME + t.slice(1);
     if (f.hasGlob) {
-      const matches = fg.sync(t, { cwd: process.cwd(), onlyFiles: false, dot: false });
+      const matches = scoped(ctx, () => fg.sync(t, { cwd: process.cwd(), onlyFiles: false, dot: false }));
       if (matches.length) {
         out.push.apply(out, matches.sort());
         return;
@@ -49426,7 +49490,7 @@ async function callBuiltin(name, argv, stdin, ctx) {
   const fn2 = custom || builtins[name];
   if (!fn2) return { stdout: "", stderr: name + ": command not found", code: 127 };
   try {
-    const r = await fn2(argv, stdin, ctx);
+    const r = custom ? await fn2(argv, stdin, ctx) : await scoped(ctx, () => fn2(argv, stdin, ctx));
     return custom ? normalizeCmdResult(r) : r;
   } catch (e) {
     if (e instanceof BreakSig || e instanceof ContinueSig || e instanceof ReturnSig) throw e;
@@ -49543,7 +49607,7 @@ async function evalCommand(node, ctx, stdin) {
     if (r.op.text === "<") {
       const target = await expandString(r.file, ctx);
       try {
-        input = String(fs.readFileSync(target));
+        input = String(ctxFs(ctx).readFileSync(resolveUserPath(ctx, target)));
       } catch (e) {
         input = "";
       }
@@ -49566,7 +49630,7 @@ async function evalCommand(node, ctx, stdin) {
       continue;
     }
     try {
-      await writeRedirect(target, content, r.op.text === ">>");
+      await writeRedirect(ctx, resolveUserPath(ctx, target), content, r.op.text === ">>");
     } catch (e) {
       res = { stdout: res.stdout, stderr: (res.stderr ? res.stderr + "\n" : "") + "redirect: " + target + ": " + e.message, code: 1 };
       continue;
@@ -49580,13 +49644,18 @@ async function evalCommand(node, ctx, stdin) {
   });
   return res;
 }
-async function writeRedirect(target, content, append) {
-  if (append && fs.promises && fs.promises.appendFile) await fs.promises.appendFile(target, content);
-  else if (!append && fs.promises && fs.promises.writeFile) await fs.promises.writeFile(target, content);
-  else if (append) fs.appendFileSync(target, content);
-  else fs.writeFileSync(target, content);
+async function writeRedirect(ctx, target, content, append) {
+  const f = ctxFs(ctx);
+  if (append && f.promises && f.promises.appendFile) await f.promises.appendFile(target, content);
+  else if (!append && f.promises && f.promises.writeFile) await f.promises.writeFile(target, content);
+  else if (append) f.appendFileSync(target, content);
+  else f.writeFileSync(target, content);
   if (!append) {
-    const back = String(fs.readFileSync(target));
+    try {
+      if ((f.statSync(target).mode & 61440) === 8192) return;
+    } catch (e) {
+    }
+    const back = String(f.readFileSync(target));
     if (back !== content) throw new Error("\u5BEB\u5165\u9A57\u8B49\u5931\u6557 (\u56DE\u8B80\u8207\u5BEB\u5165\u5167\u5BB9\u4E0D\u7B26)");
   }
 }
@@ -49854,11 +49923,11 @@ function extractHeredocs(src, ctx) {
     }
     const content = body.length ? body.join("\n") + "\n" : "";
     try {
-      fs.mkdirSync("/tmp", { recursive: true });
+      ctxFs(ctx).mkdirSync("/tmp", { recursive: true });
     } catch (e) {
     }
     const path = "/tmp/.heredoc-" + ++heredocN;
-    fs.writeFileSync(path, content);
+    ctxFs(ctx).writeFileSync(path, content);
     if (!quotedDelim) heredocExpand.add(path);
     out.push(line.replace(m[0], "< " + path));
     i = j;
@@ -49896,7 +49965,18 @@ function esh(ctx) {
   }
   const state = createContext();
   if (ctx.commands) Object.assign(state.commands, commandMap(ctx.commands));
-  state.esh = { fs: ctx.fs, cwd: () => String(ctx.shell.pwd()) };
+  const applyRoot = (root) => {
+    if (!ctx.scopeHooks) throw new Error("esh: \u6B64\u5BBF\u4E3B\u4E0D\u652F\u63F4 root/chroot (\u9700 zenfs scope hooks \u2014 \u700F\u89BD\u5668 bundle \u9650\u5B9A)");
+    const scope = ctx.scopeHooks.make(root);
+    state.esh = {
+      fs: scope.fs,
+      cwd: () => scope.procCwd,
+      scope,
+      withScope: (fn2) => ctx.scopeHooks.with(scope, fn2)
+    };
+  };
+  if (ctx.root) applyRoot(ctx.root);
+  else state.esh = { fs: ctx.fs, cwd: () => String(ctx.shell.pwd()) };
   let queue = Promise.resolve();
   const api = {
     run: (cmdline) => {
@@ -49918,17 +49998,22 @@ function esh(ctx) {
       readFile: async (path, encoding) => {
         if (encoding === void 0) encoding = "utf8";
         if (encoding === null || encoding === "binary") {
-          return new Uint8Array(ctx.fs.readFileSync(path));
+          return new Uint8Array(state.esh.fs.readFileSync(path));
         }
-        return String(ctx.fs.readFileSync(path, encoding));
+        return String(state.esh.fs.readFileSync(path, encoding));
       },
       writeFile: async (path, content) => {
         const dir = path.slice(0, path.lastIndexOf("/"));
-        if (dir) ctx.fs.mkdirSync(dir, { recursive: true });
-        ctx.fs.writeFileSync(path, content);
+        if (dir) state.esh.fs.mkdirSync(dir, { recursive: true });
+        state.esh.fs.writeFileSync(path, content);
       }
     },
-    cwd: () => String(ctx.shell.pwd()),
+    cwd: () => state.esh.cwd(),
+    // chroot: 重新定 root (host 端 API — shell 指令無法呼叫到, agent 穿不出去)
+    chroot: (root) => {
+      applyRoot(root);
+      return api;
+    },
     context: state,
     createContext,
     fs: ctx.fs
