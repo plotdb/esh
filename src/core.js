@@ -490,6 +490,19 @@ async function callBuiltin(name, argv, stdin, ctx) {
   }
 }
 
+// help: 列出可用指令 (agent / 人的發現機制, 0.4.2)
+builtins.help = (args, stdin, ctx) => {
+  const names = new Set();
+  Object.keys(builtins).forEach((k) => { if(k.indexOf("__") !== 0) names.add(k); });
+  Object.keys(ctx.commands || {}).forEach((k) => names.add(k));
+  Object.keys(globalCommands).forEach((k) => names.add(k));
+  Object.keys(ctx.funcs || {}).forEach((k) => names.add(k));
+  const out = [...names].sort().join("  ") + "\n" +
+    "(shell 語法: pipe | redirect > >> < && || ; $VAR $(cmd) $(( )) glob " +
+    "if/for/while/case/function heredoc)\n";
+  return { stdout: out, stderr: "", code: 0 };
+};
+
 // tab 補全查詢 (esh-term 經 exec 協定呼叫, 0.4.1):
 //   __complete cmd <prefix>        → 指令候選 (builtins + 自訂 + functions)
 //   __complete path <dir> <prefix> → <dir> 下以 <prefix> 開頭的項目 (目錄加 /)
@@ -561,6 +574,10 @@ builtins.xargs = async (args, stdin, ctx) => {
   builtins[c] = (args) => norm(shell[c].apply(shell, args));
 });
 
+// head/tail 自製 — 不走 shelljs 的 64KB fd chunk 迴圈 (device 檔行數不足 N 時
+// 會多讀一輪, zenfs 對 device fd 的讀取回報與實際填充不符 → 輸出補 NUL,
+// 見 tasks/device-head-nul-padding.md)。readFileSync 依 stat size 配置,
+// 一般檔案與 device 都安全。
 function headTail(which, args, stdin) {
   let n = 10;
   const files = [];
@@ -569,10 +586,13 @@ function headTail(which, args, stdin) {
     else if(args[i].slice(0, 2) === "-n") n = Number(args[i].slice(2));
     else files.push(args[i]);
   }
-  const opt = { "-n": n };
-  if(files.length) return norm(shell[which].apply(shell, [opt].concat(files)));
-  const src = pipeSrc(stdin);
-  return norm(src[which].call(src, opt));
+  let s;
+  try { s = files.length ? files.map((f) => String(fs.readFileSync(f))).join("") : (stdin === null ? "" : stdin); }
+  catch(e) { return { stdout: "", stderr: which + ": " + e.message, code: 1 }; }
+  if(s === "") return { stdout: "", stderr: "", code: 0 };
+  const lines = s.replace(/\n$/, "").split("\n");
+  const pick = which === "head" ? lines.slice(0, n) : lines.slice(-n);
+  return { stdout: pick.join("\n") + "\n", stderr: "", code: 0 };
 }
 
 function testCmd(args) {

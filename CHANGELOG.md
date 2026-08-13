@@ -1,5 +1,17 @@
 # Change Logs
 
+## v0.4.2
+
+ - bugfixes(wagent 回報, 見 tasks/device-head-nul-padding.md):
+   - 不帶 -n 的 `head` 讀 device 檔補 64KB NUL — shelljs 的 head 用
+     64KB fd chunk 迴圈讀到湊滿 N 行, device 行數不足時多讀一輪,
+     zenfs 對 device fd 的讀取回報與實際填充不符。head/tail 改自製
+     (readFileSync 依 stat size 配置, 一般檔案與 device 都安全,
+     不再走 shelljs fd 路徑)
+ - features:
+   - `help` builtin:列出全部可用指令(builtins + 自訂 + functions,
+     隱藏名排除)+ 支援語法一行摘要 — agent / 人的發現機制
+
 ## v0.4.1
 
  - bugfixes(wagent 回報, 見 tasks/redirect-immediate-read-race.md):
