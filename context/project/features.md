@@ -80,6 +80,18 @@ function/return/local、break/continue(含層數)、export/unset、~ 展開
 - OPFS 注意:剛寫入(尤其 symlink)可能晚一 tick 才被 statusMatrix
   看到;symlink 本身 commit/checkout roundtrip 驗證 OK(mode 120000)。
 
+## scoped root 與 device backend(0.4.0)
+
+- `createShell({root})` / `sh.chroot(p)`:per-shell root, shell 指令與 io
+  全關在 root 內("/" 即 root;cd .. / 絕對路徑 / glob / find 穿不出去)。
+  同一份 fs 可多 shell 各自不同 root, 互見寫入。chroot 為 host 端 JS API。
+  僅瀏覽器 bundle(zenfs bindContext + withFsScope);Node 給 root 會報錯。
+- `{backend: 'device', files: {name: {read, write?}}}`:callback-backed
+  檔案(char device, 無鏡像無快取, stat size 每次物化);無 write → EROFS;
+  整檔 read/write。rooted shell 要看 device → 掛在 root 內路徑。
+  device 為 volatile — 消費端可用 stat.mode(S_IFCHR)判斷。
+- 設計與驗收:tasks/scoped-root-and-device-backend.md。
+
 ## 跨執行緒協定 serveShell / connectShell(0.2.0)
 
 - shell 側 `serveShell(sh, target, info?)`、使用側

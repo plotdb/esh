@@ -26,7 +26,20 @@ export function esh(ctx) {
   // 自訂指令: per-shell registry (ctx.commands 可於建構時給一批)
   if(ctx.commands) Object.assign(state.commands, commandMap(ctx.commands));
   // 自訂指令經 ctx.esh 碰檔案 (git 等 command pack 依賴此介面, 0.3.0)
-  state.esh = { fs: ctx.fs, cwd: () => String(ctx.shell.pwd()) };
+  // rooted shell (0.4.0): scope = {root, pwd, procCwd, fs(bound)};
+  // shelljs 系 builtin 由 core 以 withScope 括住, 其餘一律走 scope.fs
+  const applyRoot = (root) => {
+    if(!ctx.scopeHooks) throw new Error("esh: 此宿主不支援 root/chroot (需 zenfs scope hooks — 瀏覽器 bundle 限定)");
+    const scope = ctx.scopeHooks.make(root);
+    state.esh = {
+      fs: scope.fs,
+      cwd: () => scope.procCwd,
+      scope,
+      withScope: (fn) => ctx.scopeHooks.with(scope, fn)
+    };
+  };
+  if(ctx.root) applyRoot(ctx.root);
+  else state.esh = { fs: ctx.fs, cwd: () => String(ctx.shell.pwd()) };
   // run 為 async(0.1.0);同一 shell 的 run 以 promise chain 序列化,
   // 避免並發 run 交錯互踩共享狀態(vars/cwd/lastCode/positional)。
   // 回傳各次呼叫自己的結果(非 chain 尾), 錯誤不斷鏈。
@@ -52,17 +65,19 @@ export function esh(ctx) {
         if(encoding === null || encoding === "binary") {
           // new Uint8Array(typedArray) 是複製 — 斷開 Buffer pool 底層,
           // structured clone 才不會拖整個 pool 的 ArrayBuffer 過去
-          return new Uint8Array(ctx.fs.readFileSync(path));
+          return new Uint8Array(state.esh.fs.readFileSync(path));
         }
-        return String(ctx.fs.readFileSync(path, encoding));
+        return String(state.esh.fs.readFileSync(path, encoding));
       },
       writeFile: async (path, content) => {
         const dir = path.slice(0, path.lastIndexOf("/"));
-        if(dir) ctx.fs.mkdirSync(dir, { recursive: true });
-        ctx.fs.writeFileSync(path, content);
+        if(dir) state.esh.fs.mkdirSync(dir, { recursive: true });
+        state.esh.fs.writeFileSync(path, content);
       }
     },
-    cwd: () => String(ctx.shell.pwd()),
+    cwd: () => state.esh.cwd(),
+    // chroot: 重新定 root (host 端 API — shell 指令無法呼叫到, agent 穿不出去)
+    chroot: (root) => { applyRoot(root); return api; },
     context: state,
     createContext,
     fs: ctx.fs

@@ -226,6 +226,19 @@ postMessage 方言。提案與評估見 tasks/serve-connect-shell.md。
 - [x] 0.3.0 git command pack(isomorphic-git;ctx.esh 介面、./git entry、
   test/git.mjs 20/20、OPFS 實機含 symlink roundtrip;
   見 tasks/git-support/)
+- [x] 0.4.0 scoped root(chroot)+ device backend(wagent 需求;
+  bindContext + withFsScope 圍堵、DeviceFS 子類 live-stat;
+  另修 OPFS 覆寫不截斷 bug — 見 tasks/ 對應檔)
+- [ ] 0.4.1 esh-term tab 補全:core 加隱藏 builtin `__complete <prefix>`
+  (第一個 token 補指令 — builtins/自訂/functions;其餘 readdir 補路徑),
+  term.js Tab 鍵經 exec 協定查詢 — 單候選直補(目錄加 /)、多候選補
+  公共前綴、雙擊列清單;v1 不處理含空白/引號檔名與 flag 補全
+- [ ] zenfs-issue-fire:向 zenfs 上游回報 Async mixin 的 isInLoop 缺陷
+  (追加:WebAccess.write 從不截斷 — opfs-overwrite-no-truncate, 一併回報)
+  (stack 字串比對判斷 replay, bundle/瀏覽器環境不可靠 → replay 誤 echo
+  過期 metadata 回 sync 鏡像, async backend 上 sync 寫入靜默失真;
+  根因分析與最小重現見 tasks/opfs-sync-write-loss.md。esh 已在
+  fs-zen-shim hardenAsyncMounts() 自行修補 — 0.3.2, 上游修了即可移除)
 - [ ] M3 WASM PoC(依 plan 上方評估:優先 busybox,uutils 為 fallback)
 - [ ] backlog(peer review 0.1.0 發現, pre-existing 非回歸):
   (1) break 丟出時 CompoundList 當輪已累積 stdout 被丟棄

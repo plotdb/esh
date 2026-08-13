@@ -89,6 +89,26 @@ bundle — opt in per shell:
 
 Network commands ( clone / fetch / pull / push ) are not supported yet.
 
+### Scoped root ( chroot, browser only )
+
+    const sh = await createShell({ root: '/home/ws/blocks/foo' });
+    await sh.run('ls');          // sees only foo/* — "/" is the root;
+                                 // cd .. / absolute paths / globs can't escape
+    sh.chroot('/home/ws/blocks/bar');   // host-side JS API; retarget the root
+
+Multiple shells can share one fs with different roots ( restricted agent +
+unrestricted user terminal ), seeing each other's writes.
+
+### Device backend ( callback-backed files, browser only )
+
+    const sh = await createShell({ mounts: {
+      '/dev': { backend: 'device', files: {
+        sheet: { read: () => currentSheetAsCSV(),      // live value, no caching
+                 write: (s) => applySheet(s) }         // omit write = read-only ( EROFS )
+      } }
+    } });
+    await sh.run('grep total /dev/sheet | wc -l');     // shell tools work on live data
+
 ### Advanced: bring your own dependencies ( base layer )
 
     import { esh } from '@plotdb/esh/base';
