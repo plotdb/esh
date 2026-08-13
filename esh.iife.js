@@ -49663,6 +49663,17 @@ var esh = (() => {
       return { stdout: "", stderr: name + ": " + e.message, code: 1 };
     }
   }
+  builtins.help = (args2, stdin, ctx) => {
+    const names = /* @__PURE__ */ new Set();
+    Object.keys(builtins).forEach((k) => {
+      if (k.indexOf("__") !== 0) names.add(k);
+    });
+    Object.keys(ctx.commands || {}).forEach((k) => names.add(k));
+    Object.keys(globalCommands).forEach((k) => names.add(k));
+    Object.keys(ctx.funcs || {}).forEach((k) => names.add(k));
+    const out = [...names].sort().join("  ") + "\n(shell \u8A9E\u6CD5: pipe | redirect > >> < && || ; $VAR $(cmd) $(( )) glob if/for/while/case/function heredoc)\n";
+    return { stdout: out, stderr: "", code: 0 };
+  };
   builtins.__complete = (args2, stdin, ctx) => {
     const kind = args2[0], out = [];
     if (kind === "cmd") {
@@ -49754,10 +49765,16 @@ var esh = (() => {
       } else if (args2[i].slice(0, 2) === "-n") n = Number(args2[i].slice(2));
       else files.push(args2[i]);
     }
-    const opt = { "-n": n };
-    if (files.length) return norm(shell[which].apply(shell, [opt].concat(files)));
-    const src = pipeSrc(stdin);
-    return norm(src[which].call(src, opt));
+    let s;
+    try {
+      s = files.length ? files.map((f) => String(fs.readFileSync(f))).join("") : stdin === null ? "" : stdin;
+    } catch (e) {
+      return { stdout: "", stderr: which + ": " + e.message, code: 1 };
+    }
+    if (s === "") return { stdout: "", stderr: "", code: 0 };
+    const lines = s.replace(/\n$/, "").split("\n");
+    const pick2 = which === "head" ? lines.slice(0, n) : lines.slice(-n);
+    return { stdout: pick2.join("\n") + "\n", stderr: "", code: 0 };
   }
   function testCmd(args2) {
     let ok = false;
