@@ -1,6 +1,7 @@
 // @plotdb/esh bundle 層 — 依賴於打包時(esbuild alias)解掉,
 // 產出 self-contained ESM: 使用者零設定 import
 import fs from "fs";
+import { hardenAsyncMounts } from "fs"; // zenfs Async mixin 修補 (fs-zen-shim)
 import shell from "shelljs";
 import parse from "bash-parser";
 import fg from "fast-glob";
@@ -35,7 +36,7 @@ function mountAll(mounts) {
     if(m.backend === "indexeddb") { spec[k] = { backend: IndexedDB }; return; }
     if(m.backend === "memory") { spec[k] = { backend: InMemory }; return; }
     spec[k] = m; // 進階: 直接給 zenfs backend 設定
-  }), Promise.resolve()).then(() => configure({ mounts: spec }));
+  }), Promise.resolve()).then(() => configure({ mounts: spec })).then(() => hardenAsyncMounts());
 }
 
 export const esh = eshBase;

@@ -1,5 +1,32 @@
 # Change Logs
 
+## v0.3.2
+
+ - bugfixes(資料遺失, wagent 回報 — 見 tasks/opfs-sync-write-loss.md):
+   - **根因**:zenfs Async mixin 以 stack 字串比對(isInLoop)判斷 async
+     replay,bundle 後格式不符 → 每個 replay 被誤判為新呼叫,把過期
+     metadata(pre-truncate 的 size 0)echo 回 sync 鏡像;readFileSync 依
+     stat size 配 buffer → 讀到空字串 → sed -i 等 read-modify-write 把
+     檔案清空,`>` 冷寫入讀回 0 bytes,全程 exit code 0
+   - fs-zen-shim `hardenAsyncMounts()`:把 zenfs 的 stack 偵測換成明確的
+     reentrancy flag(行為同 zenfs 原意:replay 不 echo、直接 async 呼叫
+     照樣進鏡像);並等所有 mount ready()(關掉掛載初始化期間
+     sync 讀不到剛寫入內容的窗口)。bundle-entry 與 shell.worker 掛載後呼叫
+   - redirect(`>`/`>>`)改走 async 寫入(promises.writeFile/appendFile)
+     + 回讀驗證,失敗回 stderr + code 1(不再靜默);`> /dev/null` 特例丟棄;
+     寫入不存在目錄現在會報錯(先前 shelljs silent 模式下無聲失敗)
+   - fs-zen-shim writeFileSync 寫後以 statSync 驗 size,不符丟 EIO —
+     shelljs 內部寫入(sed -i 等)失真時至少出聲
+ - tweaks(wagent 使用端回報):
+   - sed 支援 `;` 串接多重運算式(s/a/b/;s/c/d/;s/// 內的 `;` 為字面值);
+     解析失敗整段報錯, 不再靜默套用第一段
+   - grep 補 `-c`(計數)與 `-q`(安靜);無符合時 exit code 1(POSIX 語意,
+     先前一律 0);shelljs 的空訊息 "grep: " no-match 錯誤正規化為乾淨的
+     code 1
+ - tests:test/write-verify.mjs(含說謊 fs 模擬失真)、test/cmd-edges.mjs
+   (sed 多段/grep -c -q/read-after-write);瀏覽器實機全矩陣
+   (冷/熱 sed -i、0〜500ms 延遲掃描、append、掛載後立即寫入)
+
 ## v0.3.1
 
  - tweaks:

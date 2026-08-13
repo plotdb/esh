@@ -23553,6 +23553,7 @@ __export(fs_zen_shim_exports, {
   glob: () => glob2,
   globSync: () => globSync,
   globToRegex: () => globToRegex,
+  hardenAsyncMounts: () => hardenAsyncMounts,
   hasAccess: () => hasAccess,
   ioctl: () => ioctl,
   ioctlSync: () => ioctlSync,
@@ -23646,13 +23647,48 @@ __export(fs_zen_shim_exports, {
   wrap: () => wrap,
   write: () => write,
   writeFile: () => writeFile2,
-  writeFileSync: () => writeFileSync,
+  writeFileSync: () => writeFileSyncVerified,
   writeSync: () => writeSync,
   writev: () => writev,
   writevSync: () => writevSync,
   xattr: () => xattr_exports,
   zeroDevice: () => zeroDevice
 });
+function hardenAsyncMounts() {
+  const readies = [];
+  for (const [, inst] of mounts) {
+    if (inst && typeof inst.ready === "function") readies.push(inst.ready());
+  }
+  for (const [, inst] of mounts) {
+    if (!inst || !inst._sync || typeof inst._async !== "function" || inst.__eshHardened) continue;
+    inst.__eshHardened = true;
+    const origAsync = inst._async.bind(inst);
+    inst._async = (thunk) => origAsync(async () => {
+      inst.__eshInReplay = true;
+      try {
+        return await thunk();
+      } finally {
+        inst.__eshInReplay = false;
+      }
+    });
+    const proto = Object.getPrototypeOf(inst);
+    ["rename", "touch", "createFile", "unlink", "rmdir", "mkdir", "link", "write"].forEach((key) => {
+      const original = proto[key];
+      if (typeof original !== "function") return;
+      inst[key] = async (...args2) => {
+        const result = await original.apply(inst, args2);
+        if (inst.__eshInReplay || !inst._isInitialized) return result;
+        try {
+          inst._sync[key + "Sync"] && inst._sync[key + "Sync"](...args2);
+        } catch (e) {
+        }
+        return result;
+      };
+    });
+  }
+  return Promise.all(readies).then(() => {
+  });
+}
 function readdirSyncSorted(path, options) {
   const r = _readdirSync(path, options);
   if (r.length && typeof r[0] === "string") return r.sort();
@@ -23669,7 +23705,22 @@ function chmodSyncCompat(path, mode) {
     throw e;
   }
 }
-var _readdirSync, _symlinkSync, _chmodSync, fsCompat, fs_zen_shim_default;
+function writeFileSyncVerified(path, data, options) {
+  _writeFileSync(path, data, options);
+  if (typeof path !== "string") return;
+  const enc = typeof options === "string" ? options : options && options.encoding || "utf8";
+  let expect = null;
+  if (typeof data === "string" && enc === "utf8") expect = new TextEncoder().encode(data).length;
+  else if (data && data.byteLength !== void 0) expect = data.byteLength;
+  if (expect === null) return;
+  const size = compat_exports.statSync(path).size;
+  if (size !== expect) {
+    const e = new Error("EIO: \u5BEB\u5165\u672A\u843D\u5730 (\u5BEB\u5F8C size " + size + " != \u9810\u671F " + expect + "): " + path);
+    e.code = "EIO";
+    throw e;
+  }
+}
+var _readdirSync, _symlinkSync, _chmodSync, _writeFileSync, fsCompat, fs_zen_shim_default;
 var init_fs_zen_shim = __esm({
   "src/fs-zen-shim.js"() {
     init_global_inject();
@@ -23690,10 +23741,12 @@ var init_fs_zen_shim = __esm({
     _readdirSync = compat_exports.readdirSync.bind(compat_exports);
     _symlinkSync = compat_exports.symlinkSync.bind(compat_exports);
     _chmodSync = compat_exports.chmodSync.bind(compat_exports);
+    _writeFileSync = compat_exports.writeFileSync.bind(compat_exports);
     fsCompat = Object.assign({}, compat_exports, {
       readdirSync: readdirSyncSorted,
       symlinkSync: symlinkSyncCompat,
-      chmodSync: chmodSyncCompat
+      chmodSync: chmodSyncCompat,
+      writeFileSync: writeFileSyncVerified
     });
     fs_zen_shim_default = fsCompat;
   }
@@ -48410,6 +48463,7 @@ init_process_shim();
 // src/shell.worker.js
 var import_shelljs = __toESM(require_shell(), 1);
 init_fs_zen_shim();
+init_fs_zen_shim();
 var import_bash_parser = __toESM(require_src(), 1);
 var import_fast_glob = __toESM(require_out4(), 1);
 init_dist4();
@@ -49178,6 +49232,39 @@ function parseSedExpr(expr) {
   if (mods.indexOf("i") >= 0) re += "i";
   return { regex: new RegExp(parts[0], re), replacement: parts[1] };
 }
+function parseSedExprs(expr) {
+  const out = [];
+  let i = 0;
+  while (i < expr.length) {
+    if (expr.charAt(i) !== "s" || i + 3 >= expr.length) return null;
+    const d = expr.charAt(i + 1);
+    let seen = 0, j = i + 2, esc = false;
+    for (; j < expr.length; j++) {
+      const c = expr.charAt(j);
+      if (esc) {
+        esc = false;
+        continue;
+      }
+      if (c === "\\") {
+        esc = true;
+        continue;
+      }
+      if (c === d) {
+        seen++;
+        if (seen === 2) break;
+      }
+    }
+    if (seen < 2) return null;
+    j++;
+    while (j < expr.length && expr.charAt(j) !== ";") j++;
+    const one = parseSedExpr(expr.slice(i, j));
+    if (!one) return null;
+    out.push(one);
+    if (expr.charAt(j) === ";") j++;
+    i = j;
+  }
+  return out.length ? out : null;
+}
 var builtins = {
   echo: (args2) => {
     let noNewline = false;
@@ -49204,19 +49291,40 @@ var builtins = {
   },
   grep: (args2, stdin) => {
     const { flags, rest } = splitFlags(args2);
-    const fstr = flags.length ? flags.join("").replace(/-/g, "") : null;
+    let fstr = flags.length ? flags.join("").replace(/-/g, "") : "";
+    const count = fstr.indexOf("c") >= 0, quiet = fstr.indexOf("q") >= 0;
+    fstr = fstr.replace(/[cq]/g, "");
     const a = fstr ? ["-" + fstr] : [];
-    if (rest.length > 1) return norm(shell.grep.apply(shell, a.concat(rest)));
-    return norm(pipeSrc(stdin).grep.apply(pipeSrc(stdin), a.concat(rest)));
+    const r = rest.length > 1 ? norm(shell.grep.apply(shell, a.concat(rest))) : norm(pipeSrc(stdin).grep.apply(pipeSrc(stdin), a.concat(rest)));
+    const noMatch = r.code === 1 && !r.stdout && r.stderr.replace(/\s+$/, "") === "grep:";
+    if (r.code && !noMatch) return r;
+    const lines = noMatch ? "" : r.stdout.replace(/\n+$/, "");
+    const n = lines === "" ? 0 : lines.split("\n").length;
+    if (quiet) return { stdout: "", stderr: "", code: n ? 0 : 1 };
+    if (count) return { stdout: n + "\n", stderr: "", code: n ? 0 : 1 };
+    return { stdout: noMatch ? "" : r.stdout, stderr: noMatch ? "" : r.stderr, code: n ? 0 : 1 };
   },
   sed: (args2, stdin) => {
     const { flags, rest } = splitFlags(args2);
-    const e = parseSedExpr(rest[0] || "");
-    if (!e) return { stdout: "", stderr: "sed: \u53EA\u652F\u63F4 s/pat/rep/[gi] \u904B\u7B97\u5F0F", code: 1 };
+    const exprs = parseSedExprs(rest[0] || "");
+    if (!exprs) return { stdout: "", stderr: "sed: \u53EA\u652F\u63F4 s/pat/rep/[gi] \u904B\u7B97\u5F0F (\u53EF\u7528 ; \u4E32\u63A5\u591A\u6BB5)", code: 1 };
     const files = rest.slice(1);
-    const a = flags.concat([e.regex, e.replacement]);
-    if (files.length) return norm(shell.sed.apply(shell, a.concat(files)));
-    return norm(pipeSrc(stdin).sed.apply(pipeSrc(stdin), a));
+    if (files.length) {
+      if (flags.indexOf("-i") >= 0) {
+        let last = null;
+        for (const e of exprs) {
+          last = norm(shell.sed.apply(shell, flags.concat([e.regex, e.replacement]).concat(files)));
+          if (last.code) return last;
+        }
+        return last;
+      }
+      let s = files.map((f) => String(shell.cat(f))).join("");
+      for (const e of exprs) s = String(pipeSrc(s).sed(e.regex, e.replacement));
+      return { stdout: s, stderr: "", code: 0 };
+    }
+    let out = stdin === null ? "" : stdin;
+    for (const e of exprs) out = String(pipeSrc(out).sed(e.regex, e.replacement));
+    return { stdout: out, stderr: "", code: 0 };
   },
   sort: (args2, stdin) => {
     const { flags, rest } = splitFlags(args2);
@@ -49451,11 +49559,18 @@ async function evalCommand(node, ctx, stdin) {
     const target = await expandString(r.file, ctx);
     const isErr = r.numberIo && r.numberIo.text === "2";
     const content = isErr ? res.stderr : res.stdout;
-    if (r.op.text === ">") {
-      shell.ShellString(content).to(target);
-    } else if (r.op.text === ">>") {
-      shell.ShellString(content).toEnd(target);
-    } else continue;
+    if (r.op.text !== ">" && r.op.text !== ">>") continue;
+    if (target === "/dev/null") {
+      if (isErr) res.stderr = "";
+      else res.stdout = "";
+      continue;
+    }
+    try {
+      await writeRedirect(target, content, r.op.text === ">>");
+    } catch (e) {
+      res = { stdout: res.stdout, stderr: (res.stderr ? res.stderr + "\n" : "") + "redirect: " + target + ": " + e.message, code: 1 };
+      continue;
+    }
     if (isErr) res.stderr = "";
     else res.stdout = "";
   }
@@ -49464,6 +49579,16 @@ async function evalCommand(node, ctx, stdin) {
     else ctx.vars[k] = saved[k];
   });
   return res;
+}
+async function writeRedirect(target, content, append) {
+  if (append && fs.promises && fs.promises.appendFile) await fs.promises.appendFile(target, content);
+  else if (!append && fs.promises && fs.promises.writeFile) await fs.promises.writeFile(target, content);
+  else if (append) fs.appendFileSync(target, content);
+  else fs.writeFileSync(target, content);
+  if (!append) {
+    const back = String(fs.readFileSync(target));
+    if (back !== content) throw new Error("\u5BEB\u5165\u9A57\u8B49\u5931\u6557 (\u56DE\u8B80\u8207\u5BEB\u5165\u5167\u5BB9\u4E0D\u7B26)");
+  }
 }
 async function callFunction(body, argv, ctx, stdin) {
   const saved = ctx.positional;
@@ -49898,6 +50023,7 @@ try {
 } catch (e) {
   persist = "in-memory (OPFS \u639B\u8F09\u5931\u6557: " + e.message + ")";
 }
+await hardenAsyncMounts();
 if (!fs_zen_shim_default.existsSync("/home/web/README.md")) seed();
 import_shelljs.default.cd("/home/web");
 var sh = esh({ fs: fs_zen_shim_default, shell: import_shelljs.default, parse: import_bash_parser.default, fg: import_fast_glob.default });

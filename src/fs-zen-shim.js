@@ -1,8 +1,50 @@
 // alias target for 'fs' — ZenFS 版 (branch dev/zenfs)
 // ZenFS 相對路徑用自己的 context cwd, 不理 process.cwd() —
 // 掛 hook 讓 process-shim 的 chdir 同步過來
-import { fs, defaultContext } from "@zenfs/core";
+import { fs, defaultContext, mounts } from "@zenfs/core";
 export * from "@zenfs/core";
+
+// --- zenfs Async mixin 修補(資料遺失, 見 tasks/opfs-sync-write-loss.md)---
+// async backend (OPFS/WebAccess) 的 sync 寫入 = 寫入記憶體鏡像 + 排 async replay。
+// zenfs 以「stack 字串比對」(isInLoop) 判斷 async 呼叫是否為 replay — bundle 後
+// stack 格式不符, 每個 replay 都被誤判為新呼叫而把參數 echo 回鏡像:
+// pre-truncate 的 {size: 0} 一 echo, 鏡像 stat size 歸零 → readFileSync 依
+// stat size 配 buffer 讀到空字串 → sed -i 這類 read-modify-write 把檔案清空,
+// 且一切 exit code 0。此處把偵測換成明確的 reentrancy flag, 行為與 zenfs
+// 原意一致(replay 不 echo、直接的 async 呼叫照樣同步進鏡像)。
+// 需在 configure() 完成後呼叫(bundle-entry mountAll / shell.worker)。
+// 回傳 promise: 等所有 mount 的 ready()(鏡像 preload 完成)— 關掉
+// 「掛載後初始化期間寫入, sync 讀不到」的窗口(zenfs 於 preload 期間跳過鏡像更新)。
+export function hardenAsyncMounts() {
+  const readies = [];
+  for(const [, inst] of mounts) {
+    if(inst && typeof inst.ready === "function") readies.push(inst.ready());
+  }
+  for(const [, inst] of mounts) {
+    if(!inst || !inst._sync || typeof inst._async !== "function" || inst.__eshHardened) continue;
+    inst.__eshHardened = true;
+    const origAsync = inst._async.bind(inst);
+    inst._async = (thunk) => origAsync(async () => {
+      inst.__eshInReplay = true;
+      try { return await thunk(); }
+      finally { inst.__eshInReplay = false; }
+    });
+    const proto = Object.getPrototypeOf(inst);
+    ["rename", "touch", "createFile", "unlink", "rmdir", "mkdir", "link", "write"].forEach((key) => {
+      const original = proto[key]; // 類別上未被 _patchAsync 蓋掉的原始方法
+      if(typeof original !== "function") return;
+      inst[key] = async (...args) => {
+        const result = await original.apply(inst, args);
+        if(inst.__eshInReplay || !inst._isInitialized) return result;
+        // 直接的 async 呼叫(如 fs.promises.writeFile)照 zenfs 原意同步進鏡像
+        try { inst._sync[key + "Sync"] && inst._sync[key + "Sync"](...args); }
+        catch(e) { /* 鏡像 echo 失敗不影響主寫入 */ }
+        return result;
+      };
+    });
+  }
+  return Promise.all(readies).then(() => {});
+}
 globalThis.__syncFsCwd = (dir) => { defaultContext.pwd = dir; };
 // process-shim 的 chdir 用這個驗證目標 (模擬 node chdir 的 ENOENT/ENOTDIR)
 globalThis.__eshValidateCwd = (dir) => {
@@ -41,14 +83,36 @@ function chmodSyncCompat(path, mode) {
   }
 }
 
+// 4. 寫後驗證: async backend (OPFS) 的 sync 寫入曾發生「truncate 生效、內容
+// 未寫入」的靜默失真 (見 tasks/opfs-sync-write-loss.md) — 寫完立刻以 statSync
+// 驗 size (sync 鏡像層失真當下即可見), 不符丟 EIO, 讓 sed -i 等 shelljs 內部
+// 寫入至少出聲 (shelljs 會轉成該指令的 stderr + code 1), 不再無聲清空檔案
+const _writeFileSync = fs.writeFileSync.bind(fs);
+function writeFileSyncVerified(path, data, options) {
+  _writeFileSync(path, data, options);
+  if(typeof path !== "string") return; // fd 形式不驗
+  const enc = typeof options === "string" ? options : (options && options.encoding) || "utf8";
+  let expect = null;
+  if(typeof data === "string" && enc === "utf8") expect = new TextEncoder().encode(data).length;
+  else if(data && data.byteLength !== undefined) expect = data.byteLength;
+  if(expect === null) return; // 其他 encoding 不驗
+  const size = fs.statSync(path).size;
+  if(size !== expect) {
+    const e = new Error("EIO: 寫入未落地 (寫後 size " + size + " != 預期 " + expect + "): " + path);
+    e.code = "EIO";
+    throw e;
+  }
+}
+
 // 瀏覽器 prebundle 的 fs 物件屬性是 getter-only, 不能就地覆寫 → 建複本
 const fsCompat = Object.assign({}, fs, {
   readdirSync: readdirSyncSorted,
   symlinkSync: symlinkSyncCompat,
-  chmodSync: chmodSyncCompat
+  chmodSync: chmodSyncCompat,
+  writeFileSync: writeFileSyncVerified
 });
 
 // 明確 named export 蓋掉 export * 的同名版本
 // (shelljs 走 default, fast-glob/@nodelib 可能走 named — 兩邊都要接到修補版)
-export { readdirSyncSorted as readdirSync, symlinkSyncCompat as symlinkSync, chmodSyncCompat as chmodSync };
+export { readdirSyncSorted as readdirSync, symlinkSyncCompat as symlinkSync, chmodSyncCompat as chmodSync, writeFileSyncVerified as writeFileSync };
 export default fsCompat;

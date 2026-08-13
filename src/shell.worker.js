@@ -4,6 +4,7 @@
 import "./process-fix.js";
 import shell from "shelljs";
 import fs from "fs";
+import { hardenAsyncMounts } from "fs"; // zenfs Async mixin 修補 (fs-zen-shim)
 import parse from "bash-parser";
 import fg from "fast-glob";
 import { configure } from "@zenfs/core";
@@ -23,6 +24,7 @@ try {
 } catch(e) {
   persist = "in-memory (OPFS 掛載失敗: " + e.message + ")";
 }
+await hardenAsyncMounts();
 
 // 首次使用才 seed(持久化資料不可清)
 if(!fs.existsSync("/home/web/README.md")) seed();
