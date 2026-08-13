@@ -55,6 +55,26 @@ console.log("[C] redirect read-after-write (同一命令列)");
   ok(">> 後同列讀取", r2.stdout === "2\n", JSON.stringify(r2.stdout));
 }
 
+console.log("[D] __complete (tab 補全查詢, 0.4.1)");
+{
+  const c = await sh.run("__complete cmd ec");
+  ok("cmd 補全含 echo", c.stdout.split("\n").indexOf("echo") >= 0, JSON.stringify(c.stdout));
+  sh.registerCommand("echofoo", () => "");
+  const c2 = await sh.run("__complete cmd echo");
+  ok("含自訂指令", c2.stdout.indexOf("echofoo") >= 0, JSON.stringify(c2.stdout));
+  const c3 = await sh.run("greetx() { echo hi; }; __complete cmd greet");
+  ok("含 shell function", c3.stdout.indexOf("greetx") >= 0, JSON.stringify(c3.stdout));
+  await sh.run("mkdir -p cpl/subdir; echo x > cpl/file1.txt; echo y > cpl/file2.txt");
+  const p1 = await sh.run("__complete path cpl/ file");
+  ok("path 補全列出符合檔案", p1.stdout === "file1.txt\nfile2.txt\n", JSON.stringify(p1.stdout));
+  const p2 = await sh.run("__complete path cpl/ sub");
+  ok("目錄候選帶 /", p2.stdout === "subdir/\n", JSON.stringify(p2.stdout));
+  const p3 = await sh.run("__complete path no-such-dir/ x");
+  ok("不存在目錄 → 空 (不炸)", p3.stdout === "" && p3.code === 0, JSON.stringify(p3));
+  const hidden = await sh.run("__complete cmd __");
+  ok("__complete 自身不入候選", hidden.stdout.indexOf("__complete") < 0, JSON.stringify(hidden.stdout));
+}
+
 console.log("");
 console.log("[cmd-edges] " + pass + " passed, " + fail + " failed");
 if(fail) process.exit(1);

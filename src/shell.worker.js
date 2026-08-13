@@ -4,7 +4,7 @@
 import "./process-fix.js";
 import shell from "shelljs";
 import fs from "fs";
-import { hardenAsyncMounts } from "fs"; // zenfs Async mixin 修補 (fs-zen-shim)
+import { hardenAsyncMounts, drainFsReplays } from "fs"; // zenfs Async mixin 修補 (fs-zen-shim)
 import parse from "bash-parser";
 import fg from "fast-glob";
 import { configure } from "@zenfs/core";
@@ -30,7 +30,7 @@ await hardenAsyncMounts();
 if(!fs.existsSync("/home/web/README.md")) seed();
 shell.cd("/home/web");
 
-const sh = esh({ fs, shell, parse, fg });
+const sh = esh({ fs, shell, parse, fg, fsDrain: drainFsReplays });
 serveShell(sh, self, { persist });
 
 // 初始 ready 廣播沿用(既有 client 靠這個顯示 banner);

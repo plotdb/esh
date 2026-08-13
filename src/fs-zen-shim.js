@@ -47,6 +47,23 @@ export function withFsScope(scope, fn) {
 // 需在 configure() 完成後呼叫(bundle-entry mountAll / shell.worker)。
 // 回傳 promise: 等所有 mount 的 ready()(鏡像 preload 完成)— 關掉
 // 「掛載後初始化期間寫入, sync 讀不到」的窗口(zenfs 於 preload 期間跳過鏡像更新)。
+// 已 harden 的 async mount 清單 — drainFsReplays 用
+const hardened = [];
+
+// 等所有 sync 寫入的 replay 佇列排空。直接 async 寫入(如 redirect 的
+// promises.writeFile)前呼叫, 否則會超車先前 sync 寫的 replay、再被晚到的
+// replay 蓋回舊值 (tasks/redirect-immediate-read-race.md)。
+export async function drainFsReplays() {
+  for(const inst of hardened) {
+    let last = null;
+    // 等待期間可能又有新 replay 進佇列 — 追到尾巴不再變為止 (上限防呆)
+    for(let i = 0; i < 10 && inst._promise && inst._promise !== last; i++) {
+      last = inst._promise;
+      await last.catch(() => {});
+    }
+  }
+}
+
 export function hardenAsyncMounts() {
   const readies = [];
   for(const [, inst] of mounts) {
@@ -55,12 +72,13 @@ export function hardenAsyncMounts() {
   for(const [, inst] of mounts) {
     if(!inst || !inst._sync || typeof inst._async !== "function" || inst.__eshHardened) continue;
     inst.__eshHardened = true;
-    const origAsync = inst._async.bind(inst);
-    inst._async = (thunk) => origAsync(async () => {
+    const rawAsync = inst._async.bind(inst); // zenfs 原佇列 (sync 寫的 replay 走這)
+    inst._async = (thunk) => rawAsync(async () => {
       inst.__eshInReplay = true;
       try { return await thunk(); }
       finally { inst.__eshInReplay = false; }
     });
+    hardened.push(inst);
     const proto = Object.getPrototypeOf(inst);
     // WebAccess 的 write 用 createWritable({keepExistingData}) 從 offset 覆寫,
     // 從不截斷 — 覆寫較短內容時舊尾巴留在 OPFS 上, 鏡像蓋住看不見, 重載才爆

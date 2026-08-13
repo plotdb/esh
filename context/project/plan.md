@@ -229,10 +229,9 @@ postMessage 方言。提案與評估見 tasks/serve-connect-shell.md。
 - [x] 0.4.0 scoped root(chroot)+ device backend(wagent 需求;
   bindContext + withFsScope 圍堵、DeviceFS 子類 live-stat;
   另修 OPFS 覆寫不截斷 bug — 見 tasks/ 對應檔)
-- [ ] 0.4.1 esh-term tab 補全:core 加隱藏 builtin `__complete <prefix>`
-  (第一個 token 補指令 — builtins/自訂/functions;其餘 readdir 補路徑),
-  term.js Tab 鍵經 exec 協定查詢 — 單候選直補(目錄加 /)、多候選補
-  公共前綴、雙擊列清單;v1 不處理含空白/引號檔名與 flag 補全
+- [x] 0.4.1 esh-term tab 補全(`__complete` builtin + term.js Tab;
+  單候選直補/公共前綴/雙擊列清單;實機驗證 cat 直補、README.md 路徑補全、
+  echo/env/export 清單;cmd-edges +7 測項)
 - [ ] zenfs-issue-fire:向 zenfs 上游回報 Async mixin 的 isInLoop 缺陷
   (追加:WebAccess.write 從不截斷 — opfs-overwrite-no-truncate, 一併回報)
   (stack 字串比對判斷 replay, bundle/瀏覽器環境不可靠 → replay 誤 echo

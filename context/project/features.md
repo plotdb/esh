@@ -59,6 +59,8 @@ function/return/local、break/continue(含層數)、export/unset、~ 展開
 - 全域(預留):`registerCommand(...)` 從 entry re-export
   (core 的 globalCommands, 同 realm 所有 shell 共用, 慎用)。
 - 查找順序:shell function → per-shell → 全域 → builtins。
+- esh-term tab 補全(0.4.1):指令/路徑補全, 候選經 exec 協定問
+  `__complete` builtin;單候選直補、公共前綴、雙擊列清單。
 - worker/終端:function 過不了 postMessage — esh-term 要自訂指令得自備
   worker(createTerminal 的 opts.worker 縫已存在);
   worker 底座抽用(esh-worker-base)為未來項目。
