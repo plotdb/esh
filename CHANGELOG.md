@@ -1,5 +1,24 @@
 # Change Logs
 
+## v0.4.1
+
+ - bugfixes(wagent 回報, 見 tasks/redirect-immediate-read-race.md):
+   - redirect 寫入與先前 sync 寫入的 replay 佇列 race — 直接 async 寫
+     (promises.writeFile)會超車稍早 sync 寫(io.writeFile / sed -i)的
+     replay, 再被晚到的 replay 蓋回舊值(實測 io 長寫→redirect 短寫
+     32/60 失敗;回報的「寫後立即讀到空」為同機制的側影)。
+     修正:fs-zen-shim 新增 drainFsReplays()(追平所有 async mount 的
+     replay 佇列尾), writeRedirect 寫入前先排空。
+     修正後同場景 0/60、原重現 0/30、sed 交錯 0/30, 磁碟落地正確
+ - features:
+   - esh-term tab 補全:第一個 token(含 `|` `&&` `;` 之後)補指令
+     (builtins + 自訂指令 + shell functions),其餘補路徑(目錄加 /);
+     單候選直補、多候選補公共前綴、同一行連按兩次列清單。
+     候選經既有 exec 協定問 worker 的 `__complete` builtin
+     (`cmd <prefix>` / `path <dir> <prefix>`, 隱藏名不入候選) —
+     協定無變動;rooted shell 走同一 ctx, 列不出 root 外。
+     v1 限制:不處理含空白/引號的檔名、不補 flag
+
 ## v0.4.0
 
  - features(wagent 需求, 見 tasks/scoped-root-and-device-backend.md):

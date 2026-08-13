@@ -1,12 +1,13 @@
 // browser-shell core — shell 語法直譯層 + builtin registry
 // 零 import: 依賴(parser/指令本體/fs/glob)全由 initDeps(ctx) 注入,
 // bundler-agnostic。單一模組實例只能綁一組依賴(再呼叫會整組替換)。
-let parse, shell, fs, fg;
+let parse, shell, fs, fg, fsDrain;
 export function initDeps(ctx) {
   parse = ctx.parse;
   shell = ctx.shell;
   fs = ctx.fs;
   fg = ctx.fg;
+  fsDrain = ctx.fsDrain; // 選配: 直接 async 寫入前排空 sync-replay 佇列 (zenfs 宿主)
 }
 
 // ---------- context ----------
@@ -489,6 +490,35 @@ async function callBuiltin(name, argv, stdin, ctx) {
   }
 }
 
+// tab 補全查詢 (esh-term 經 exec 協定呼叫, 0.4.1):
+//   __complete cmd <prefix>        → 指令候選 (builtins + 自訂 + functions)
+//   __complete path <dir> <prefix> → <dir> 下以 <prefix> 開頭的項目 (目錄加 /)
+// 輸出一行一個候選 (basename)。rooted shell 走同一 ctx, 列不出 root 外。
+builtins.__complete = (args, stdin, ctx) => {
+  const kind = args[0], out = [];
+  if(kind === "cmd") {
+    const prefix = args[1] || "";
+    const names = new Set();
+    Object.keys(builtins).forEach((k) => { if(k.indexOf("__") !== 0) names.add(k); });
+    Object.keys(ctx.commands || {}).forEach((k) => names.add(k));
+    Object.keys(globalCommands).forEach((k) => names.add(k));
+    Object.keys(ctx.funcs || {}).forEach((k) => names.add(k));
+    [...names].forEach((n) => { if(n.indexOf(prefix) === 0) out.push(n); });
+  } else if(kind === "path") {
+    const dir = args[1] || ".", prefix = args[2] || "";
+    const abs = resolveUserPath(ctx, dir);
+    let entries;
+    try { entries = ctxFs(ctx).readdirSync(abs); } catch(e) { entries = []; }
+    entries.forEach((name) => {
+      if(typeof name !== "string" || name.indexOf(prefix) !== 0) return;
+      let isDir = false;
+      try { isDir = ctxFs(ctx).statSync(abs + "/" + name).isDirectory(); } catch(e) { /* 讀不到就當檔案 */ }
+      out.push(name + (isDir ? "/" : ""));
+    });
+  }
+  return { stdout: out.sort().join("\n") + (out.length ? "\n" : ""), stderr: "", code: 0 };
+};
+
 builtins.xargs = async (args, stdin, ctx) => {
   let n = 0, perLine = false, placeholder = null;
   let i = 0;
@@ -640,6 +670,9 @@ async function evalCommand(node, ctx, stdin) {
 // evaluator 本來就是 async, 不用付同步的代價。
 async function writeRedirect(ctx, target, content, append) {
   const f = ctxFs(ctx);
+  // 先排空 sync 寫入的 replay 佇列 — 否則這筆 async 寫會超車先前 sync 寫的
+  // replay, 再被晚到的 replay 蓋回舊值 (tasks/redirect-immediate-read-race.md)
+  if(fsDrain) await fsDrain();
   if(append && f.promises && f.promises.appendFile) await f.promises.appendFile(target, content);
   else if(!append && f.promises && f.promises.writeFile) await f.promises.writeFile(target, content);
   else if(append) f.appendFileSync(target, content);

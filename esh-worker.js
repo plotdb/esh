@@ -23535,6 +23535,7 @@ __export(fs_zen_shim_exports, {
   defaultContext: () => defaultContext,
   detachFS: () => detachFS,
   devices: () => devices,
+  drainFsReplays: () => drainFsReplays,
   encodeDirListing: () => encodeDirListing,
   exists: () => exists2,
   existsSync: () => existsSync,
@@ -23685,6 +23686,16 @@ function withFsScope(scope, fn2) {
     if (saved.proc !== null && globalThis.__eshSetCwd) globalThis.__eshSetCwd(saved.proc);
   }
 }
+async function drainFsReplays() {
+  for (const inst of hardened) {
+    let last = null;
+    for (let i = 0; i < 10 && inst._promise && inst._promise !== last; i++) {
+      last = inst._promise;
+      await last.catch(() => {
+      });
+    }
+  }
+}
 function hardenAsyncMounts() {
   const readies = [];
   for (const [, inst] of mounts) {
@@ -23693,8 +23704,8 @@ function hardenAsyncMounts() {
   for (const [, inst] of mounts) {
     if (!inst || !inst._sync || typeof inst._async !== "function" || inst.__eshHardened) continue;
     inst.__eshHardened = true;
-    const origAsync = inst._async.bind(inst);
-    inst._async = (thunk) => origAsync(async () => {
+    const rawAsync = inst._async.bind(inst);
+    inst._async = (thunk) => rawAsync(async () => {
       inst.__eshInReplay = true;
       try {
         return await thunk();
@@ -23702,6 +23713,7 @@ function hardenAsyncMounts() {
         inst.__eshInReplay = false;
       }
     });
+    hardened.push(inst);
     const proto = Object.getPrototypeOf(inst);
     const truncateReal = async (path, size) => {
       if (typeof inst.get !== "function") return;
@@ -23766,12 +23778,13 @@ function writeFileSyncVerified(path, data, options) {
     throw e;
   }
 }
-var _readdirSync, _symlinkSync, _chmodSync, _writeFileSync, fsCompat, fs_zen_shim_default;
+var hardened, _readdirSync, _symlinkSync, _chmodSync, _writeFileSync, fsCompat, fs_zen_shim_default;
 var init_fs_zen_shim = __esm({
   "src/fs-zen-shim.js"() {
     init_global_inject();
     init_dist4();
     init_dist4();
+    hardened = [];
     globalThis.__syncFsCwd = (dir) => {
       defaultContext.pwd = dir;
     };
@@ -49004,11 +49017,13 @@ var parse3;
 var shell;
 var fs;
 var fg;
+var fsDrain;
 function initDeps(ctx) {
   parse3 = ctx.parse;
   shell = ctx.shell;
   fs = ctx.fs;
   fg = ctx.fg;
+  fsDrain = ctx.fsDrain;
 }
 function createContext() {
   return {
@@ -49497,6 +49512,41 @@ async function callBuiltin(name, argv, stdin, ctx) {
     return { stdout: "", stderr: name + ": " + e.message, code: 1 };
   }
 }
+builtins.__complete = (args2, stdin, ctx) => {
+  const kind = args2[0], out = [];
+  if (kind === "cmd") {
+    const prefix = args2[1] || "";
+    const names = /* @__PURE__ */ new Set();
+    Object.keys(builtins).forEach((k) => {
+      if (k.indexOf("__") !== 0) names.add(k);
+    });
+    Object.keys(ctx.commands || {}).forEach((k) => names.add(k));
+    Object.keys(globalCommands).forEach((k) => names.add(k));
+    Object.keys(ctx.funcs || {}).forEach((k) => names.add(k));
+    [...names].forEach((n) => {
+      if (n.indexOf(prefix) === 0) out.push(n);
+    });
+  } else if (kind === "path") {
+    const dir = args2[1] || ".", prefix = args2[2] || "";
+    const abs = resolveUserPath(ctx, dir);
+    let entries2;
+    try {
+      entries2 = ctxFs(ctx).readdirSync(abs);
+    } catch (e) {
+      entries2 = [];
+    }
+    entries2.forEach((name) => {
+      if (typeof name !== "string" || name.indexOf(prefix) !== 0) return;
+      let isDir = false;
+      try {
+        isDir = ctxFs(ctx).statSync(abs + "/" + name).isDirectory();
+      } catch (e) {
+      }
+      out.push(name + (isDir ? "/" : ""));
+    });
+  }
+  return { stdout: out.sort().join("\n") + (out.length ? "\n" : ""), stderr: "", code: 0 };
+};
 builtins.xargs = async (args2, stdin, ctx) => {
   let n = 0, perLine = false, placeholder = null;
   let i = 0;
@@ -49646,6 +49696,7 @@ async function evalCommand(node, ctx, stdin) {
 }
 async function writeRedirect(ctx, target, content, append) {
   const f = ctxFs(ctx);
+  if (fsDrain) await fsDrain();
   if (append && f.promises && f.promises.appendFile) await f.promises.appendFile(target, content);
   else if (!append && f.promises && f.promises.writeFile) await f.promises.writeFile(target, content);
   else if (append) f.appendFileSync(target, content);
@@ -50111,7 +50162,7 @@ try {
 await hardenAsyncMounts();
 if (!fs_zen_shim_default.existsSync("/home/web/README.md")) seed();
 import_shelljs.default.cd("/home/web");
-var sh = esh({ fs: fs_zen_shim_default, shell: import_shelljs.default, parse: import_bash_parser.default, fg: import_fast_glob.default });
+var sh = esh({ fs: fs_zen_shim_default, shell: import_shelljs.default, parse: import_bash_parser.default, fg: import_fast_glob.default, fsDrain: drainFsReplays });
 serveShell(sh, self, { persist });
 self.postMessage({ type: "ready", cwd: sh.cwd(), persist });
 /*! Bundled license information:

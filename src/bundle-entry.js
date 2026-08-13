@@ -1,7 +1,7 @@
 // @plotdb/esh bundle 層 — 依賴於打包時(esbuild alias)解掉,
 // 產出 self-contained ESM: 使用者零設定 import
 import fs from "fs";
-import { hardenAsyncMounts, makeFsScope, withFsScope } from "fs"; // fs-zen-shim
+import { hardenAsyncMounts, makeFsScope, withFsScope, drainFsReplays } from "fs"; // fs-zen-shim
 import shell from "shelljs";
 import parse from "bash-parser";
 import fg from "fast-glob";
@@ -27,6 +27,7 @@ export function createShell(opts) {
   const p = (opts && opts.mounts) ? mountAll(opts.mounts) : Promise.resolve();
   return p.then(() => eshBase({
     fs, shell, parse, fg,
+    fsDrain: drainFsReplays,
     commands: opts && opts.commands,
     root: opts && opts.root,
     scopeHooks: { make: makeFsScope, with: withFsScope }

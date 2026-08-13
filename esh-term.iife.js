@@ -11223,6 +11223,63 @@ ${h2.join(`
       buf = s15;
       term.write(s15);
     }
+    let lastTabBuf = null;
+    function tokenContext() {
+      const at2 = buf.lastIndexOf(" ");
+      const token = buf.slice(at2 + 1);
+      const before = buf.slice(0, at2 + 1).replace(/\s+$/, "");
+      const isCmd = before === "" || /[|&;(]$/.test(before);
+      return { token, isCmd };
+    }
+    function handleTab() {
+      if (busy || !sh) return;
+      const { token, isCmd } = tokenContext();
+      if (token.indexOf("'") >= 0 || token.indexOf('"') >= 0) return;
+      let q2;
+      const slash = token.lastIndexOf("/");
+      const dir = slash >= 0 ? token.slice(0, slash + 1) : "";
+      const base = slash >= 0 ? token.slice(slash + 1) : token;
+      if (isCmd && slash < 0) q2 = "__complete cmd '" + token + "'";
+      else q2 = "__complete path '" + (dir || ".") + "' '" + base + "'";
+      busy = true;
+      sh.run(q2).then((r) => {
+        busy = false;
+        const cands = (r.stdout || "").split("\n").filter(Boolean);
+        const prefix = isCmd && slash < 0 ? token : base;
+        if (!cands.length) {
+          lastTabBuf = null;
+          return;
+        }
+        if (cands.length === 1) {
+          const c = cands[0];
+          let add = c.slice(prefix.length);
+          if (c.charAt(c.length - 1) !== "/") add += " ";
+          buf += add;
+          term.write(add);
+          lastTabBuf = null;
+          return;
+        }
+        let common = cands[0];
+        cands.forEach((c) => {
+          while (common && c.indexOf(common) !== 0) common = common.slice(0, -1);
+        });
+        if (common.length > prefix.length) {
+          const add = common.slice(prefix.length);
+          buf += add;
+          term.write(add);
+          lastTabBuf = null;
+          return;
+        }
+        if (lastTabBuf === buf) {
+          term.write("\r\n" + cands.join("  ") + "\r\n");
+          prompt();
+          term.write(buf);
+          lastTabBuf = null;
+        } else lastTabBuf = buf;
+      }).catch(() => {
+        busy = false;
+      });
+    }
     function handleData(data) {
       for (let i = 0; i < data.length; i++) {
         const c = data.charAt(i);
@@ -11233,6 +11290,10 @@ ${h2.join(`
             pending = data.slice(i + 1) + pending;
             return;
           }
+          continue;
+        }
+        if (code === 9) {
+          handleTab();
           continue;
         }
         if (code === 127) {

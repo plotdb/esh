@@ -91,6 +91,65 @@ export function createTerminal(el, opts) {
     term.write(s);
   }
 
+  // ---- tab 補全 (0.4.1) ----
+  // 第一個 token (含 | && ; 之後) 補指令, 其餘補路徑 — 候選經 exec 協定問
+  // worker 的 __complete builtin。單候選直補 (目錄加 /、指令加空白)、
+  // 多候選補公共前綴、同一行連按兩次列出清單。
+  // v1 限制: 不處理含空白/引號的檔名、不補 flag。
+  let lastTabBuf = null;
+  function tokenContext() {
+    // 目前 token = 最後一個空白之後; 之前最近的非空白若是 | & ; ( 則為指令位置
+    const at = buf.lastIndexOf(" ");
+    const token = buf.slice(at + 1);
+    const before = buf.slice(0, at + 1).replace(/\s+$/, "");
+    const isCmd = before === "" || /[|&;(]$/.test(before);
+    return { token, isCmd };
+  }
+  function handleTab() {
+    if(busy || !sh) return;
+    const { token, isCmd } = tokenContext();
+    if(token.indexOf("'") >= 0 || token.indexOf('"') >= 0) return; // v1 不處理引號
+    let q;
+    const slash = token.lastIndexOf("/");
+    const dir = slash >= 0 ? token.slice(0, slash + 1) : "";
+    const base = slash >= 0 ? token.slice(slash + 1) : token;
+    if(isCmd && slash < 0) q = "__complete cmd '" + token + "'";
+    else q = "__complete path '" + (dir || ".") + "' '" + base + "'";
+    busy = true;
+    sh.run(q).then((r) => {
+      busy = false;
+      const cands = (r.stdout || "").split("\n").filter(Boolean);
+      const prefix = isCmd && slash < 0 ? token : base;
+      if(!cands.length) { lastTabBuf = null; return; }
+      if(cands.length === 1) {
+        const c = cands[0];
+        let add = c.slice(prefix.length);
+        if(c.charAt(c.length - 1) !== "/") add += " ";
+        buf += add;
+        term.write(add);
+        lastTabBuf = null;
+        return;
+      }
+      // 公共前綴延伸
+      let common = cands[0];
+      cands.forEach((c) => { while(common && c.indexOf(common) !== 0) common = common.slice(0, -1); });
+      if(common.length > prefix.length) {
+        const add = common.slice(prefix.length);
+        buf += add;
+        term.write(add);
+        lastTabBuf = null;
+        return;
+      }
+      // 無可延伸: 連按兩次才列清單
+      if(lastTabBuf === buf) {
+        term.write("\r\n" + cands.join("  ") + "\r\n");
+        prompt();
+        term.write(buf);
+        lastTabBuf = null;
+      } else lastTabBuf = buf;
+    }).catch(() => { busy = false; });
+  }
+
   function handleData(data) {
     for(let i = 0; i < data.length; i++) {
       const c = data.charAt(i);
@@ -100,6 +159,7 @@ export function createTerminal(el, opts) {
         if(busy) { pending = data.slice(i + 1) + pending; return; }
         continue;
       }
+      if(code === 9) { handleTab(); continue; }
       if(code === 127) {
         if(buf.length) { buf = buf.slice(0, -1); term.write("\b \b"); }
         continue;
