@@ -41,6 +41,22 @@ With OPFS persistence:
     // sandbox: createShell({ fs: a memfs instance }) — note that fs and shell
     // must share the same fs implementation; see src/base.js
 
+### Node with virtual fs ( `@plotdb/esh/node-zenfs` )
+
+Same behavior as the browser bundle — `mounts`, `root` ( chroot ) and the
+`device` backend all work; the browser's `opfs` maps to `passthrough`
+( a real-disk subdirectory mounted into the virtual fs ):
+
+    import { createShell } from '@plotdb/esh/node-zenfs';
+    const sh = await createShell({ mounts: {
+      '/home': { backend: 'passthrough', path: '/srv/ws/u123' }
+    }, root: '/home/workspace' });
+
+All backends here are synchronous. Real symlinks inside the passthrough
+directory that resolve outside of it are rejected ( EACCES ) by default;
+pass `followSymlinks: true` on the mount to disable the guard. Requires
+node >= 20.16.
+
 ### Terminal ( `esh-term`, shipped with the main package as separate files )
 
     <link rel="stylesheet" href="dist/esh-term.css">
@@ -70,6 +86,8 @@ Serve a shell from a worker and use it from the main thread ( or any
     await sh.run('ls');
     await sh.io.writeFile('/home/web/data.csv', text);   // content bypasses the parser
     await sh.io.readFile('/home/web/img.png', null);     // Uint8Array
+    await sh.io.readdir('/home', { withFileTypes: true }); // [{name, isDirectory}]
+    await sh.io.stat('/home/web/data.csv');   // {size, mtimeMs, isFile, isDirectory}
 
 Local shells expose the same `sh.io` subset, so consumer code works with
 either. `serveShell` uses `addEventListener` and only handles its own message
@@ -89,7 +107,7 @@ bundle — opt in per shell:
 
 Network commands ( clone / fetch / pull / push ) are not supported yet.
 
-### Scoped root ( chroot, browser only )
+### Scoped root ( chroot — browser bundle and node-zenfs )
 
     const sh = await createShell({ root: '/home/ws/blocks/foo' });
     await sh.run('ls');          // sees only foo/* — "/" is the root;
@@ -99,7 +117,7 @@ Network commands ( clone / fetch / pull / push ) are not supported yet.
 Multiple shells can share one fs with different roots ( restricted agent +
 unrestricted user terminal ), seeing each other's writes.
 
-### Device backend ( callback-backed files, browser only )
+### Device backend ( callback-backed files — browser bundle and node-zenfs )
 
     const sh = await createShell({ mounts: {
       '/dev': { backend: 'device', files: {

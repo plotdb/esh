@@ -1904,7 +1904,7 @@ var eshGit = (() => {
         },
         exitCode: 0
       };
-      globalThis.process = process;
+      if (typeof globalThis.process === "undefined") globalThis.process = process;
       process_shim_default = process;
     }
   });

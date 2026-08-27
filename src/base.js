@@ -73,6 +73,23 @@ export function esh(ctx) {
         const dir = path.slice(0, path.lastIndexOf("/"));
         if(dir) state.esh.fs.mkdirSync(dir, { recursive: true });
         state.esh.fs.writeFileSync(path, content);
+      },
+      // readdir/stat (0.5.0, wagent file-tree 需求): 回純 JSON 形狀 —
+      // 跨 postMessage 不能帶 Dirent/Stats 物件, local/remote 才能 drop-in
+      readdir: async (path, opts) => {
+        const names = state.esh.fs.readdirSync(path).map(String);
+        if(!(opts && opts.withFileTypes)) return names;
+        const base = path === "/" ? "" : path.replace(/\/+$/, "");
+        return names.map((name) => {
+          let isDirectory = false;
+          try { isDirectory = state.esh.fs.statSync(base + "/" + name).isDirectory(); }
+          catch(e) { /* 壞 entry (如被擋的 symlink) → 當一般檔 */ }
+          return { name, isDirectory };
+        });
+      },
+      stat: async (path) => {
+        const s = state.esh.fs.statSync(path);
+        return { size: s.size, mtimeMs: s.mtimeMs, isFile: s.isFile(), isDirectory: s.isDirectory() };
       }
     },
     cwd: () => state.esh.cwd(),

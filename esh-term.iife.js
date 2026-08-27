@@ -1904,7 +1904,7 @@ var eshTerm = (() => {
         },
         exitCode: 0
       };
-      globalThis.process = process;
+      if (typeof globalThis.process === "undefined") globalThis.process = process;
       process_shim_default = process;
     }
   });
@@ -11108,7 +11108,9 @@ ${h2.join(`
             }),
             io: {
               readFile: (path, encoding) => send({ type: "fs", op: "readFile", args: encoding === void 0 ? [path] : [path, encoding] }).then(unwrapFs),
-              writeFile: (path, content) => send({ type: "fs", op: "writeFile", args: [path, content] }).then(unwrapFs)
+              writeFile: (path, content) => send({ type: "fs", op: "writeFile", args: [path, content] }).then(unwrapFs),
+              readdir: (path, opts2) => send({ type: "fs", op: "readdir", args: opts2 === void 0 ? [path] : [path, opts2] }).then(unwrapFs),
+              stat: (path) => send({ type: "fs", op: "stat", args: [path] }).then(unwrapFs)
             },
             cwd: ready.cwd,
             ready,

@@ -1914,7 +1914,7 @@ var esh = (() => {
         },
         exitCode: 0
       };
-      globalThis.process = process2;
+      if (typeof globalThis.process === "undefined") globalThis.process = process2;
       process = process2;
     }
   });
@@ -49865,18 +49865,22 @@ var esh = (() => {
   async function writeRedirect(ctx, target, content, append) {
     const f = ctxFs(ctx);
     if (fsDrain) await fsDrain();
-    if (append && f.promises && f.promises.appendFile) await f.promises.appendFile(target, content);
-    else if (!append && f.promises && f.promises.writeFile) await f.promises.writeFile(target, content);
-    else if (append) f.appendFileSync(target, content);
-    else f.writeFileSync(target, content);
-    if (!append) {
+    if (append) {
+      let prev = "";
       try {
-        if ((f.statSync(target).mode & 61440) === 8192) return;
+        prev = String(f.readFileSync(target));
       } catch (e) {
       }
-      const back = String(f.readFileSync(target));
-      if (back !== content) throw new Error("\u5BEB\u5165\u9A57\u8B49\u5931\u6557 (\u56DE\u8B80\u8207\u5BEB\u5165\u5167\u5BB9\u4E0D\u7B26)");
+      content = prev + content;
     }
+    if (f.promises && f.promises.writeFile) await f.promises.writeFile(target, content);
+    else f.writeFileSync(target, content);
+    try {
+      if ((f.statSync(target).mode & 61440) === 8192) return;
+    } catch (e) {
+    }
+    const back = String(f.readFileSync(target));
+    if (back !== content) throw new Error("\u5BEB\u5165\u9A57\u8B49\u5931\u6557 (\u56DE\u8B80\u8207\u5BEB\u5165\u5167\u5BB9\u4E0D\u7B26)");
   }
   async function callFunction(body, argv, ctx, stdin) {
     const saved = ctx.positional;
@@ -50225,6 +50229,25 @@ var esh = (() => {
           const dir = path.slice(0, path.lastIndexOf("/"));
           if (dir) state.esh.fs.mkdirSync(dir, { recursive: true });
           state.esh.fs.writeFileSync(path, content);
+        },
+        // readdir/stat (0.5.0, wagent file-tree 需求): 回純 JSON 形狀 —
+        // 跨 postMessage 不能帶 Dirent/Stats 物件, local/remote 才能 drop-in
+        readdir: async (path, opts) => {
+          const names = state.esh.fs.readdirSync(path).map(String);
+          if (!(opts && opts.withFileTypes)) return names;
+          const base = path === "/" ? "" : path.replace(/\/+$/, "");
+          return names.map((name) => {
+            let isDirectory2 = false;
+            try {
+              isDirectory2 = state.esh.fs.statSync(base + "/" + name).isDirectory();
+            } catch (e) {
+            }
+            return { name, isDirectory: isDirectory2 };
+          });
+        },
+        stat: async (path) => {
+          const s = state.esh.fs.statSync(path);
+          return { size: s.size, mtimeMs: s.mtimeMs, isFile: s.isFile(), isDirectory: s.isDirectory() };
         }
       },
       cwd: () => state.esh.cwd(),
@@ -50395,7 +50418,9 @@ var esh = (() => {
             }),
             io: {
               readFile: (path, encoding) => send({ type: "fs", op: "readFile", args: encoding === void 0 ? [path] : [path, encoding] }).then(unwrapFs),
-              writeFile: (path, content) => send({ type: "fs", op: "writeFile", args: [path, content] }).then(unwrapFs)
+              writeFile: (path, content) => send({ type: "fs", op: "writeFile", args: [path, content] }).then(unwrapFs),
+              readdir: (path, opts2) => send({ type: "fs", op: "readdir", args: opts2 === void 0 ? [path] : [path, opts2] }).then(unwrapFs),
+              stat: (path) => send({ type: "fs", op: "stat", args: [path] }).then(unwrapFs)
             },
             cwd: ready.cwd,
             ready,
