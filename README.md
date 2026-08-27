@@ -28,7 +28,10 @@ With OPFS persistence:
     const sh = await createShell({ mounts: { '/home': { backend: 'opfs' } } });
     // scope storage per page: { backend: 'opfs', path: 'my-app' } mounts a
     // subdirectory of origin storage; { backend: 'indexeddb', storeName: 'x' }
-    // uses a separate store — same-origin workspaces stay isolated
+    // uses a separate store — same-origin workspaces stay isolated.
+    // note: changing `path` later only moves the mount point — data written
+    // under the old path stays where it was on disk, and may resurface at
+    // unexpected virtual locations; migrate or clean up old directories
 
 ### Browser ( non-ESM, `window.esh` )
 
