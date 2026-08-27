@@ -26,6 +26,9 @@ project plan for the evolution roadmap.
 With OPFS persistence:
 
     const sh = await createShell({ mounts: { '/home': { backend: 'opfs' } } });
+    // scope storage per page: { backend: 'opfs', path: 'my-app' } mounts a
+    // subdirectory of origin storage; { backend: 'indexeddb', storeName: 'x' }
+    // uses a separate store — same-origin workspaces stay isolated
 
 ### Browser ( non-ESM, `window.esh` )
 
@@ -141,8 +144,13 @@ unrestricted user terminal ), seeing each other's writes.
    `web/vitedev/`: `m2.html` ( command survival table, 81 cases ),
    `m25.html` ( syntax cases, 72 cases ), `terminal.html`
    ( xterm + worker + OPFS )
- - `npm start` — fedev template server ( `web/`: pug demo and static pages,
-   consuming `dist/` artifacts only )
+ - `npm run web` ( alias: `npm start` ) — fedev template server ( `web/`:
+   pug demo with an xterm terminal and static pages, consuming `dist/`
+   artifacts only ); open the printed URL and play with the shell
+ - `npm run console` — interactive shell in the terminal ( node-zenfs
+   sandbox; `npm run build` first ). Mount a real directory and jail it:
+
+       npm run console -- --mount /home=./some/dir --root /home
 
 Vite is only used by the test pages under `web/vitedev/`, which need
 source-level alias resolution; the shipped artifacts and the `web/` demo do

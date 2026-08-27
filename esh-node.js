@@ -43442,9 +43442,10 @@ function dirOf(p) {
   return i <= 0 ? "/" : p.slice(0, i);
 }
 function eacces(p) {
-  const e = new Error("EACCES: path escapes passthrough jail, '" + p + "'");
+  const e = new Error("EACCES: permission denied, access '" + p + "'");
   e.code = "EACCES";
   e.errno = -13;
+  e.syscall = "access";
   e.path = p;
   return e;
 }

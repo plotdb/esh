@@ -39,11 +39,22 @@ function mountAll(mounts) {
   const keys = Object.keys(mounts);
   return keys.reduce((p, k) => p.then(() => {
     const m = mounts[k];
+    // path (0.5.1, tasks/mount-scoped-storage.md): origin 儲存的子目錄 —
+    // 同 origin 多份 workspace 互不干擾; 省略 = origin root (原行為)。
+    // 多層 ("a/b") 逐段建 (getDirectoryHandle 不吃斜線)
     if(m.backend === "opfs")
       return navigator.storage.getDirectory().then((handle) => {
-        spec[k] = { backend: WebAccess, handle };
+        const segs = String(m.path || "").split("/").filter(Boolean);
+        return segs.reduce(
+          (p, seg) => p.then((h) => h.getDirectoryHandle(seg, { create: true })),
+          Promise.resolve(handle)
+        ).then((h) => { spec[k] = { backend: WebAccess, handle: h }; });
       });
-    if(m.backend === "indexeddb") { spec[k] = { backend: IndexedDB }; return; }
+    if(m.backend === "indexeddb") {
+      // storeName: 每個名字一份獨立的 IndexedDB fs (zenfs IndexedDBOptions)
+      spec[k] = m.storeName ? { backend: IndexedDB, storeName: m.storeName } : { backend: IndexedDB };
+      return;
+    }
     if(m.backend === "memory") { spec[k] = { backend: InMemory }; return; }
     if(m.backend === "device") { spec[k] = { backend: EshDevice, files: m.files }; return; }
     spec[k] = m; // 進階: 直接給 zenfs backend 設定

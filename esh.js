@@ -50454,10 +50454,16 @@ function mountAll(mounts2) {
     const m = mounts2[k];
     if (m.backend === "opfs")
       return navigator.storage.getDirectory().then((handle) => {
-        spec[k] = { backend: WebAccess, handle };
+        const segs = String(m.path || "").split("/").filter(Boolean);
+        return segs.reduce(
+          (p2, seg) => p2.then((h) => h.getDirectoryHandle(seg, { create: true })),
+          Promise.resolve(handle)
+        ).then((h) => {
+          spec[k] = { backend: WebAccess, handle: h };
+        });
       });
     if (m.backend === "indexeddb") {
-      spec[k] = { backend: IndexedDB };
+      spec[k] = m.storeName ? { backend: IndexedDB, storeName: m.storeName } : { backend: IndexedDB };
       return;
     }
     if (m.backend === "memory") {
