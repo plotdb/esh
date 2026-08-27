@@ -693,16 +693,21 @@ async function writeRedirect(ctx, target, content, append) {
   // 先排空 sync 寫入的 replay 佇列 — 否則這筆 async 寫會超車先前 sync 寫的
   // replay, 再被晚到的 replay 蓋回舊值 (tasks/redirect-immediate-read-race.md)
   if(fsDrain) await fsDrain();
-  if(append && f.promises && f.promises.appendFile) await f.promises.appendFile(target, content);
-  else if(!append && f.promises && f.promises.writeFile) await f.promises.writeFile(target, content);
-  else if(append) f.appendFileSync(target, content);
-  else f.writeFileSync(target, content);
-  if(!append) {
-    // char device (0.4.0 device backend) 的寫入可能有損轉換, 回讀不必相符 — 跳過驗證
-    try { if((f.statSync(target).mode & 0xF000) === 0x2000) return; } catch(e) { /* 驗證照舊 */ }
-    const back = String(f.readFileSync(target));
-    if(back !== content) throw new Error("寫入驗證失敗 (回讀與寫入內容不符)");
+  // append 一律 read+concat+write: zenfs Passthrough 的 appendFile 會把檔案
+  // 清空、{flag:"a"} 被當覆寫 (上游 bug, 見 tasks/node-entry-zenfs.md);
+  // run 佇列已序列化, 讀寫之間無交錯, 語意等價 — 且對 char device 的
+  // whole-file write 語意反而正確
+  if(append) {
+    let prev = "";
+    try { prev = String(f.readFileSync(target)); } catch(e) { /* 不存在 → 視為空 */ }
+    content = prev + content;
   }
+  if(f.promises && f.promises.writeFile) await f.promises.writeFile(target, content);
+  else f.writeFileSync(target, content);
+  // char device (0.4.0 device backend) 的寫入可能有損轉換, 回讀不必相符 — 跳過驗證
+  try { if((f.statSync(target).mode & 0xF000) === 0x2000) return; } catch(e) { /* 驗證照舊 */ }
+  const back = String(f.readFileSync(target));
+  if(back !== content) throw new Error("寫入驗證失敗 (回讀與寫入內容不符)");
 }
 
 async function callFunction(body, argv, ctx, stdin) {

@@ -1,5 +1,37 @@
 # Change Logs
 
+## v0.5.0
+
+ - features(wagent 需求, 見 tasks/node-entry-zenfs.md):
+   - node-zenfs 宿主 entry(`@plotdb/esh/node-zenfs` → dist/esh-node.js):
+     Node 走 zenfs, `createShell({mounts, root, commands})` 與瀏覽器
+     bundle 行為一致 — mounts / chroot / device 在 Node 全部可用;
+     esbuild platform:node 目標, 沿用瀏覽器那組 fs/process/os/exec shim
+     alias。原零墊片 `.` entry 原樣不動(非 breaking)
+   - `passthrough` backend 短名字(node-zenfs 限定):真磁碟子目錄掛進
+     虛擬 fs(對應瀏覽器 opfs), `{backend: "passthrough", path: dir}`;
+     全同步 — WebAccess 那三個 async 鏡像 bug 在此結構上不存在
+   - passthrough symlink 圍堵(fs-guard.js, 預設開):jail 內真磁碟
+     symlink 指外(chroot 管不到, 真 fs 解析會穿 — 實測)一律 EACCES;
+     斷 symlink 指外的寫入也拒(防在外部建檔);`followSymlinks: true`
+     可關。shell 內 `ln -s` 指外在建立時即被擋
+   - `sh.io.readdir(path[, {withFileTypes}])` / `sh.io.stat(path)`
+     (wagent file-tree 需求):回純 JSON 形狀(names / {name, isDirectory} /
+     {size, mtimeMs, isFile, isDirectory}), local 與 remote(connectShell)
+     drop-in 同形狀;serveShell 的 fs op dispatch 本為泛用, 協定無改動
+ - bugfixes:
+   - `>>` append 在 zenfs Passthrough 上把檔案清空(上游 bug:
+     appendFile 清檔、`{flag:"a"}` 被當覆寫)— writeRedirect 的 append
+     改 read+concat+write(run 佇列已序列化, 語意等價), 回讀驗證
+     一併涵蓋 append;另 patch PassthroughFS.touch/touchSync 把
+     undefined mode 餵 chmod 炸掉的上游 bug(寫既有檔案必炸 + 卡
+     stale 狀態)
+   - process-shim 不再無條件覆蓋 `globalThis.process`(node-zenfs
+     bundle 下宿主 app 共用真 process, 不得蓋掉;瀏覽器行為不變)
+ - tests:test/node-zenfs.mjs 26 測項(passthrough 雙向可見 /
+   symlink guard / chroot escape checklist / device / memory 邊角),
+   瀏覽器迴歸(async-test 7/7、bundle-test 10/10、OPFS+memory append 實測)
+
 ## v0.4.2
 
  - bugfixes(wagent 回報, 見 tasks/device-head-nul-padding.md):

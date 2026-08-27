@@ -40,7 +40,35 @@ const common = {
   logLevel: "info"
 };
 
+// node-zenfs 目標 (0.5.0): platform node — path/stream/buffer 等用真 builtin,
+// 只換掉「必須虛擬化」的那幾個: fs/process(虛擬 cwd)/os(虛擬 home)/exec 類。
+// path 仍用 path-browserify: 虛擬 fs 一律 posix 路徑, 不隨宿主 OS 變
+const nodeAlias = {
+  fs: r("../src/fs-zen-shim.js"),
+  "node:fs": r("../src/fs-zen-shim.js"),
+  process: r("../src/process-shim.js"),
+  "node:process": r("../src/process-shim.js"),
+  os: r("../src/os-shim.js"),
+  "node:os": r("../src/os-shim.js"),
+  execa: r("../src/execa-shim.js"),
+  child_process: r("../src/child_process-shim.js"),
+  "node:child_process": r("../src/child_process-shim.js"),
+  path: "path-browserify",
+  "node:path": "path-browserify"
+};
+const nodeCommon = {
+  bundle: true,
+  platform: "node",
+  alias: nodeAlias,
+  inject: [r("../src/global-inject.js")],
+  define: { "process.env.NODE_ENV": "\"production\"" },
+  // CJS 依賴 (readable-stream 等) 在 ESM 輸出下 require 真 builtin 用
+  banner: { js: "import { createRequire as __eshCR } from 'node:module'; const require = __eshCR(import.meta.url);" },
+  logLevel: "info"
+};
+
 const engine = { ...common, entryPoints: [r("../src/bundle-entry.js")] };
+const nodeE = { ...nodeCommon, entryPoints: [r("../src/node-zenfs-entry.js")] };
 const termE = { ...common, entryPoints: [r("../src/term-entry.js")] };
 const workerE = { ...common, entryPoints: [r("../src/shell.worker.js")] };
 const gitE = { ...common, entryPoints: [r("../src/git-command.js")] }; // optional pack, 主 entry 不得混入
@@ -51,6 +79,7 @@ Promise.all([
   esbuild.build({ ...termE, format: "esm", outfile: r("../dist/esh-term.js") }),
   esbuild.build({ ...termE, format: "iife", globalName: "eshTerm", outfile: r("../dist/esh-term.iife.js") }),
   esbuild.build({ ...workerE, format: "esm", outfile: r("../dist/esh-worker.js") }),
+  esbuild.build({ ...nodeE, format: "esm", outfile: r("../dist/esh-node.js") }),
   esbuild.build({ ...gitE, format: "esm", outfile: r("../dist/esh-git.js") }),
   esbuild.build({ ...gitE, format: "iife", globalName: "eshGit", outfile: r("../dist/esh-git.iife.js") })
 ]).then(() => {

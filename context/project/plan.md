@@ -232,12 +232,23 @@ postMessage 方言。提案與評估見 tasks/serve-connect-shell.md。
 - [x] 0.4.1 esh-term tab 補全(`__complete` builtin + term.js Tab;
   單候選直補/公共前綴/雙擊列清單;實機驗證 cat 直補、README.md 路徑補全、
   echo/env/export 清單;cmd-edges +7 測項)
+- [x] 0.5.0 node-zenfs 宿主 entry(wagent 需求;`./node-zenfs` exports、
+  passthrough backend + symlink 圍堵(fs-guard)、chroot/device 在 Node
+  可用;test/node-zenfs.mjs 26/26;見 tasks/node-entry-zenfs.md)
 - [ ] zenfs-issue-fire:向 zenfs 上游回報 Async mixin 的 isInLoop 缺陷
   (追加:WebAccess.write 從不截斷 — opfs-overwrite-no-truncate, 一併回報)
+  (追加 0.5.0:Passthrough 兩隻 — appendFile 把檔案清空 /
+  `{flag:"a"}` 被當覆寫;touch/touchSync 把 undefined mode 餵 chmod,
+  寫既有檔案必炸並卡 stale 狀態 — 見 tasks/node-entry-zenfs.md)
   (stack 字串比對判斷 replay, bundle/瀏覽器環境不可靠 → replay 誤 echo
   過期 metadata 回 sync 鏡像, async backend 上 sync 寫入靜默失真;
   根因分析與最小重現見 tasks/opfs-sync-write-loss.md。esh 已在
   fs-zen-shim hardenAsyncMounts() 自行修補 — 0.3.2, 上游修了即可移除)
+- [ ] mounts spec 遞迴解析 + `fetch` / `cow` 短名字(wagent 詢問, 方向已對齊:
+  短名字表收「JSON 可描述的 backend」, 組合器以巢狀 spec 表達 —
+  `{backend:'cow', readable:{backend:'fetch',...}, writable:{backend:'opfs'}}`;
+  情境:伺服器出唯讀起始 workspace, 改動落 OPFS。開工時需實測 zenfs
+  Fetch/CopyOnWrite + hardenAsyncMounts 相容性 — Fetch 是 async backend)
 - [ ] M3 WASM PoC(依 plan 上方評估:優先 busybox,uutils 為 fallback)
 - [ ] backlog(peer review 0.1.0 發現, pre-existing 非回歸):
   (1) break 丟出時 CompoundList 當輪已累積 stdout 被丟棄

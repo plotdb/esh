@@ -53,5 +53,8 @@ const process = {
   exit: function(code) { console.warn("[process-shim] exit(" + code + ") ignored"); },
   exitCode: 0
 };
-globalThis.process = process;
+// 瀏覽器無 process global → 補上; node-zenfs bundle 下真 process 已存在,
+// 不得覆蓋 (宿主 app 共用同一 process global) — bundle 內部經 esbuild inject
+// 拿到的本來就是這個 shim, 不依賴 global
+if(typeof globalThis.process === "undefined") globalThis.process = process;
 export default process;

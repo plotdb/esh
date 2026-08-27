@@ -101,6 +101,30 @@ console.log("[G] 本地 sh.io 與 remote 同簽名 (drop-in)");
   ok("local cwd()", typeof local.cwd() === "string" && local.cwd().length > 0, "");
 }
 
+console.log("[G2] io.readdir / io.stat (0.5.0, remote 與 local 同形狀)");
+{
+  const [server, client] = makePair();
+  serveShell(local, server);
+  const sh = await connectShell(client);
+  await sh.io.writeFile(d + "/tree/f1.txt", "1");
+  await sh.io.writeFile(d + "/tree/sub/f2.txt", "22");
+  const names = await sh.io.readdir(d + "/tree");
+  ok("readdir 名字清單", JSON.stringify(names.slice().sort()) === JSON.stringify(["f1.txt", "sub"]), JSON.stringify(names));
+  const ents = await sh.io.readdir(d + "/tree", { withFileTypes: true });
+  const byName = {}; ents.forEach((e) => byName[e.name] = e);
+  ok("withFileTypes 分得出目錄", byName["sub"] && byName["sub"].isDirectory === true && byName["f1.txt"].isDirectory === false, JSON.stringify(ents));
+  const st = await sh.io.stat(d + "/tree/sub/f2.txt");
+  ok("stat 形狀", st.size === 2 && st.isFile === true && st.isDirectory === false && typeof st.mtimeMs === "number", JSON.stringify(st));
+  const std = await sh.io.stat(d + "/tree/sub");
+  ok("stat 目錄", std.isDirectory === true && std.isFile === false, JSON.stringify(std));
+  const err = await sh.io.readdir(d + "/no-such-dir").then(() => null, (e) => e);
+  ok("readdir 缺目錄 → reject", err instanceof Error, String(err));
+  const localNames = await local.io.readdir(d + "/tree");
+  ok("local readdir 同形狀", JSON.stringify(localNames.slice().sort()) === JSON.stringify(["f1.txt", "sub"]), JSON.stringify(localNames));
+  const localSt = await local.io.stat(d + "/tree/f1.txt");
+  ok("local stat 同形狀", localSt.size === 1 && localSt.isFile === true, JSON.stringify(localSt));
+}
+
 console.log("[H] dispose");
 {
   const [server, client] = makePair();

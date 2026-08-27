@@ -107,7 +107,11 @@ export function connectShell(workerOrUrl, opts) {
             readFile: (path, encoding) =>
               send({ type: "fs", op: "readFile", args: encoding === undefined ? [path] : [path, encoding] }).then(unwrapFs),
             writeFile: (path, content) =>
-              send({ type: "fs", op: "writeFile", args: [path, content] }).then(unwrapFs)
+              send({ type: "fs", op: "writeFile", args: [path, content] }).then(unwrapFs),
+            readdir: (path, opts) =>
+              send({ type: "fs", op: "readdir", args: opts === undefined ? [path] : [path, opts] }).then(unwrapFs),
+            stat: (path) =>
+              send({ type: "fs", op: "stat", args: [path] }).then(unwrapFs)
           },
           cwd: ready.cwd,
           ready, // 完整 ready 訊息 (含 serveShell info, 如 persist)
