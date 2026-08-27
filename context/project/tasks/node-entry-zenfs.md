@@ -193,6 +193,14 @@ prefix 目錄當作「agent 可完整讀寫」的邊界來配置(例如專用空
    既有五套 94 測項全過;瀏覽器迴歸 async-test 7/7、bundle-test 10/10、
    OPFS+memory `>>` 實測正常(core 的 append 改動不影響瀏覽器)。
 
+**wagent 驗收(20260827;0.5.0 發布後)**:實際組合(root + passthrough +
+device 掛 root 內)寫成他們的 test/node-esh.mjs 21 項全過 — chroot 爬不出去、
+passthrough 雙向即時可見、`>>` 不清空、readdir/stat 形狀正確、device 即時值
+且不落磁碟、symlink 內外兩向都擋住。兩個初始 FAIL 均為對方測試自身筆誤
+(基準檔漏換行;掛載點目錄會建出、改斷言「存在但為空」),非 esh bug。
+他們的 file tree 已從 `ls -R`+解析 stdout 換成遞迴 readdir(瀏覽器實測過,
+空目錄誤判檔案的舊問題順帶消失)。
+
 使用(wagent 的兩段式寫法成立):
 
     import { createShell } from "@plotdb/esh/node-zenfs";
