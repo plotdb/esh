@@ -11,9 +11,11 @@ function dirOf(p) {
 }
 
 function eacces(p) {
-  const e = new Error("EACCES: path escapes passthrough jail, '" + p + "'");
+  // 形狀對齊 node 的 fs error (zenfs 會用 code/syscall/path 重組訊息)
+  const e = new Error("EACCES: permission denied, access '" + p + "'");
   e.code = "EACCES";
   e.errno = -13;
+  e.syscall = "access";
   e.path = p;
   return e;
 }

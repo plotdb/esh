@@ -1,5 +1,15 @@
 # Change Logs
 
+## master
+
+ - features:
+   - `npm run console`:本地互動 shell demo(tools/console.mjs, dist
+     node-zenfs 沙箱;`--mount /v=/real`(passthrough)與 `--root` 可展示
+     0.5.0 圍堵);`npm run web` alias(fedev pug demo, 同 npm start)
+ - tweaks:
+   - fs-guard 的 EACCES 錯誤補齊 node fs error 欄位(syscall/errno),
+     zenfs 重組訊息不再出現 undefined
+
 ## v0.5.0
 
  - features(wagent 需求, 見 tasks/node-entry-zenfs.md):
