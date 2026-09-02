@@ -1,0 +1,97 @@
+doctype html
+html(lang="en")
+  head
+    meta(charset="utf-8")
+    meta(name="viewport", content="width=device-width, initial-scale=1.0")
+    title esh — custom worker demo
+    link(rel="stylesheet", href="/assets/esh/esh-term.iife.css")
+    style(type="text/css"): :stylus
+      html, body
+        height 100%
+        margin 0
+        background #11111b
+        font-family monospace
+      #hint
+        position fixed
+        bottom 8px
+        right 16px
+        z-index 10
+        color #585b70
+        font-size .75rem
+        pointer-events none
+      #term
+        height 100%
+        padding 8px
+        box-sizing border-box
+      dialog#ask-dlg
+        background #1e1e2e
+        color #cdd6f4
+        border 1px solid #45475a
+        border-radius 8px
+        font-family monospace
+        min-width 20rem
+        &::backdrop
+          background rgba(0,0,0,.55)
+        input
+          width 100%
+          margin .6rem 0
+          background #313244
+          color #cdd6f4
+          border 1px solid #45475a
+          border-radius 6px
+          padding .3rem .5rem
+          font-family monospace
+          box-sizing border-box
+        form.btns
+          text-align right
+          button
+            background #45475a
+            color #cdd6f4
+            border none
+            border-radius 6px
+            padding .3rem .9rem
+            font-family monospace
+            cursor pointer
+            margin-left .5rem
+  body
+    #term
+    #hint custom worker — try: ask how many?, git init, help
+    dialog#ask-dlg
+      #ask-msg
+      input(type="number", id="ask-input", placeholder="42")
+      form.btns(method="dialog")
+        button(value="cancel", id="ask-cancel") cancel
+        button(value="ok", id="ask-ok") ok
+    script(src="/assets/esh/esh-term.iife.js")
+    script: :lsc
+      # 自訂 worker: consumer 端 registerCommand (`ask`) + git pack (見 /js/custom-worker.js)
+      w = new Worker '/js/custom-worker.js'
+
+      # ask 的 hostcall: <dialog> 要數字, postMessage 回給 worker。
+      # 回覆掛在按鈕 click / Esc(cancel)上, close 事件只當備援 —
+      # 某些自動化環境不發 close 事件, 單靠它會讓 worker 佇列卡死。
+      dlg = document.get-element-by-id 'ask-dlg'
+      input = document.get-element-by-id 'ask-input'
+      pending = null
+      resolve-ask = (payload) ->
+        return unless pending?
+        w.post-message (payload <<< {type: \hostcall-result, id: pending})
+        pending := null
+      answer = ->
+        n = parseFloat input.value
+        if isNaN n then resolve-ask {cancelled: true} else resolve-ask {value: n}
+      document.get-element-by-id 'ask-ok' .add-event-listener \click, -> answer!
+      document.get-element-by-id 'ask-cancel' .add-event-listener \click, -> resolve-ask {cancelled: true}
+      dlg.add-event-listener \cancel, -> resolve-ask {cancelled: true}
+      dlg.add-event-listener \close, ->
+        if dlg.return-value is \ok then answer! else resolve-ask {cancelled: true}
+      w.add-event-listener \message, (ev) ->
+        m = ev.data
+        return unless m.type is \hostcall and m.call is \ask-number
+        document.get-element-by-id 'ask-msg' .text-content = m.msg or 'give me a number'
+        input.value = ''
+        pending := m.id
+        dlg.show-modal!
+        input.focus!
+
+      esh-term.create-terminal document.get-element-by-id('term'), {worker: w}

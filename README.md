@@ -147,9 +147,13 @@ unrestricted user terminal ), seeing each other's writes.
    `web/vitedev/`: `m2.html` ( command survival table, 81 cases ),
    `m25.html` ( syntax cases, 72 cases ), `terminal.html`
    ( xterm + worker + OPFS )
- - `npm run web` ( alias: `npm start` ) — fedev template server ( `web/`:
-   pug demo with an xterm terminal and static pages, consuming `dist/`
-   artifacts only ); open the printed URL and play with the shell
+ - `npm run web` ( alias: `npm start` ) — fedev template server ( `web/`,
+   consuming `dist/` artifacts only ); the landing page links two demos:
+   `/terminal/` ( xterm + built-in worker, OPFS persistent, popup test
+   suite ) and `/custom/` ( consumer-authored worker: `registerCommand`
+   with an async `ask` via a hostcall round-trip to a page dialog, plus
+   the git pack, wired up with `serveShell` — try `ask how many?`,
+   `git init` )
  - `npm run console` — interactive shell in the terminal ( node-zenfs
    sandbox; `npm run build` first ). Mount a real directory and jail it:
 
